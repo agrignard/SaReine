@@ -15,11 +15,11 @@ global {
 	geometry shape <- envelope(shape_file_buildings);
 
 	init { 
-		create object from:shape_file_buildings with:[type::string(get("type")), name::string(get("name"))]{
+		create object from:shape_file_buildings with:[type::string(get("type")), name::string(get("name")),level::int(get("level"))]{
 			if (type = "circle"){
 			  do die;
 		    }
-		    color<-#grey;
+		   color<-#white;
 		    if (name = "gamablue"){
 		    	color<-#gamablue;
 		    }
@@ -30,24 +30,55 @@ global {
 		    	color<-#gamaorange;
 		    }
 		    if (name = "donut1"){
-		    	color<-#gamablue+100;
+		    	color<-rgb(#gamablue,25);
 		    }
 		    if (name = "donut3"){
-		    	color<-#gamared+100;
+		    	color<-rgb(#gamared,25);
 		    }
 		    if (name = "donut5"){
-		    	color<-#gamaorange+100;
-		    }   
+		    	color<-rgb(#gamaorange,25);
+		    }
+		    if (name = "donut2" or name = "donut4"){
+		    	do die;
+		    }
+		    if (name = "rond"){
+		    	color<-rgb(#gamared,25);
+		    }
 		}
 		
+		write length(object);
+		write object collect each.level;
+		ask object{
+			switch level {
+				match 5 {
+					axe <- {1,0,0};
+				}
+				match 4 {
+					axe <- {0,1,0};
+				}
+				match 3 {
+					axe <- {1,0,0};
+				}
+				match 2 {
+					axe <- {0,1,0};
+				}
+					match 1 {
+					axe <- {1,0,0};
+				}
+			}
+			shape <- shape + 5 around(polyline([origin - axe*500, origin +  axe*500]));
+			shift <- location - origin;
+			if level = 0{
+				do die;
+			}
+		}
 		
-//		create test{
-//			x <- 490;
-//		}
-//		
-//				create test{
-//			x <- 300;
-//		}
+		loop i over: remove_duplicates(object collect each.level){
+			ask first(object where (each.level = i)){
+				linked_objects <- object where (each.level = i-1);
+			}
+		}
+
 		ask object{
 			shift <- location-origin;
 			write "Objet "+int(self)+" location: "+location;
@@ -77,13 +108,23 @@ species object skills:[moving]{
 	float rotation_speed <- 1.0;
 	point original_location;
 	int level;
+	list<object> linked_objects <- [];
 	
 	point shift;
 
-	reflex move{
+	action propagate_rotation(float angle,point ax){
+		shape <- shape rotated_by (angle,ax);
+	    shift <-  shift rotated_by (angle::ax);
+	    axe <-  axe rotated_by (angle::ax);
+	}
+
+	reflex rotate{
 	
 		shape <- shape rotated_by (rotation_speed,axe);
 	    shift <-  shift rotated_by (rotation_speed::axe);
+	    ask linked_objects{
+	    	do propagate_rotation(rotation_speed, axe);
+	    }
 	  //  write shift;
 	//	new <- origin +shift; 
 		//location <-origin + point(shift rotated_by (rotation_speed,axe));
@@ -107,7 +148,6 @@ experiment Display  type: gui {
 		
 		display complex  background:#black type: 3d axes:false{
 		  species object aspect:obj;			
-		  species test aspect: obj;
 		}
 	}
 }
