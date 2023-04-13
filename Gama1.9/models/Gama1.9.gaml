@@ -39,9 +39,13 @@ global {
 		    if (name = "donut5"){
 		    	color<-rgb(#gamaorange,25);
 		    }
-		     if (name = "donut2" or name = "donut4"){
+		    if (name = "donut2" or name = "donut4"){
 		    	do die;
 		    }
+		    if (name = "rond"){
+		    	color<-rgb(#gamared,25);
+		    }
+		    
 	   
 		}
 		
