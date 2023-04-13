@@ -19,7 +19,7 @@ global {
 			if (type = "circle"){
 			  do die;
 		    }
-		   color<-#white;
+		   color<-#grey;
 		    if (name = "gamablue"){
 		    	color<-#gamablue;
 		    }
@@ -39,15 +39,14 @@ global {
 		    	color<-rgb(#gamaorange,25);
 		    }
 		    if (name = "donut2" or name = "donut4"){
-		    	do die;
+		 //   	do die;
 		    }
 		    if (name = "rond"){
 		    	color<-rgb(#gamared,25);
 		    }
 		}
 		
-		write length(object);
-		write object collect each.level;
+
 		ask object{
 			switch level {
 				match 5 {
@@ -63,12 +62,12 @@ global {
 					axe <- {0,1,0};
 				}
 					match 1 {
-					axe <- {1,0,0};
+					axe <- {1,1,0};
 				}
 			}
-			shape <- shape + 5 around(polyline([origin - axe*500, origin +  axe*500]));
+			//shape <- shape + 5 around(polyline([origin - axe*500, origin +  axe*500]));
 			shift <- location - origin;
-			if level = 0{
+			if level =0 or level > 5{
 				do die;
 			}
 		}
@@ -78,26 +77,18 @@ global {
 				linked_objects <- object where (each.level = i-1);
 			}
 		}
-
-		ask object{
-			shift <- location-origin;
-			write "Objet "+int(self)+" location: "+location;
-
-		}
+//
+//		ask object{
+//			shift <- location-origin;
+//			write "Objet "+int(self)+" location: "+location;
+//
+//		}
 	
 	}  
 	
 	
 	
 } 
-
-species test{
-	int x;
-	aspect obj {
-		draw 10 around(polyline([{x,0}, {x,1000}])) depth:1 color: #green;
-	}
-}
-
 
 
 species object skills:[moving]{
@@ -106,7 +97,6 @@ species object skills:[moving]{
 	string name;
 	point axe <- {0,1,0};
 	float rotation_speed <- 1.0;
-	point original_location;
 	int level;
 	list<object> linked_objects <- [];
 	
@@ -116,6 +106,9 @@ species object skills:[moving]{
 		shape <- shape rotated_by (angle,ax);
 	    shift <-  shift rotated_by (angle::ax);
 	    axe <-  axe rotated_by (angle::ax);
+	   	ask linked_objects{
+	    	do propagate_rotation(angle, ax);
+	    }
 	}
 
 	reflex rotate{
@@ -123,21 +116,12 @@ species object skills:[moving]{
 		shape <- shape rotated_by (rotation_speed,axe);
 	    shift <-  shift rotated_by (rotation_speed::axe);
 	    ask linked_objects{
-	    	do propagate_rotation(rotation_speed, axe);
+	    	do propagate_rotation(myself.rotation_speed, myself.axe);
 	    }
-	  //  write shift;
-	//	new <- origin +shift; 
-		//location <-origin + point(shift rotated_by (rotation_speed,axe));
-		//shape <- shape rotated_by (rnd(1),{rnd(-1,1),rnd(-1,1),rnd(-1,1)});
-		//do wander;
-		//color <-rnd_color(255);
-		
 	}
 	aspect obj {
-//		draw 5 around(polyline([location, location+{0,1000,0}])) depth:1 color: color;
-//		draw 5 around(polyline([origin, origin+{0,1000,0}])) depth:1 color: #green;
 		draw shape depth:1 color:color border: #black at: origin +shift;
-		draw sphere(5) at: origin color: #green;
+		//draw sphere(5) at: origin color: #green;
 	}
 			
 }	
