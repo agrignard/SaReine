@@ -15,11 +15,12 @@ global {
 	geometry shape <- envelope(shape_file_buildings);
 
 	init { 
-		create object from:shape_file_buildings with:[type::string(get("type")), name::string(get("name"))]{
+		create object from:shape_file_buildings with:[id::int(get("id")),type::string(get("type")), name::string(get("name"))]{
+			location<-{location.x,location.y,1000};
 			if (type = "circle"){
 			  do die;
 		    }
-		    color<-#black;
+		    color<-#white;
 		    if (name = "gamablue"){
 		    	color<-#gamablue;
 		    }
@@ -30,14 +31,18 @@ global {
 		    	color<-#gamaorange;
 		    }
 		    if (name = "donut1"){
-		    	color<-#gamablue+100;
+		    	color<-rgb(#gamablue,25);
 		    }
 		    if (name = "donut3"){
-		    	color<-#gamared+100;
+		    	color<-rgb(#gamared,25);
 		    }
 		    if (name = "donut5"){
-		    	color<-#gamaorange+100;
-		    }   
+		    	color<-rgb(#gamaorange,25);
+		    }
+		     if (name = "donut2" or name = "donut4"){
+		    	do die;
+		    }
+	   
 		}
 		
 	}  
@@ -46,13 +51,14 @@ global {
 
 species object skills:[moving]{
 	rgb color;
+	int id;
 	string type;
 	string name;
 	
 	reflex move{
-		shape <- shape rotated_by (rnd(1),{rnd(-1,1),rnd(-1,1),rnd(-1,1)});
-		do wander;
-		color <-rnd_color(255);
+		//shape <- shape rotated_by (rnd(1),{rnd(-1,1),rnd(-1,1),rnd(-1,1)});
+		location<-{location.x,location.y,location.z>0 ? (1000-cycle*id*10):0};
+		//color <-rnd_color(255);
 	}
 	aspect obj {
 		draw shape depth:1 color:color border: #black;
