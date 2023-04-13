@@ -19,7 +19,7 @@ global {
 			if (type = "circle"){
 			  do die;
 		    }
-		   color<-#grey;
+		   color<-rgb(#black,0);
 		    if (name = "gamablue"){
 		    	color<-#gamablue;
 		    }
@@ -67,7 +67,7 @@ global {
 			}
 			//shape <- shape + 5 around(polyline([origin - axe*500, origin +  axe*500]));
 			shift <- location - origin;
-			if level =0 or level > 5{
+			if level =0 {
 				do die;
 			}
 		}
