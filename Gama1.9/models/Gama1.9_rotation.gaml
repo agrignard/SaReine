@@ -10,12 +10,13 @@ model obj_loading
 global {
 	point origin <- {490,490,0};
 	float color_speed <- 2.0;
-	file shape_file_buildings <- shape_file("../includes/GamaVectorized_cut.shp");
+	file Gama_shape_file <- shape_file("../includes/GamaVectorized_cut.shp");
 	string mode <- "Light to dark" among: ["Light to dark", "Dark to light", "Light", "Dark"];
 	bool innerRings <- false;
+	bool cutShapes <- true;
 	
 	//definition of the geometry of the world agent (environment) as the envelope of the shapefile
-	geometry shape <- envelope(shape_file_buildings);
+	geometry shape <- envelope(Gama_shape_file);
 	
 	// auxiliary sigmoid function
 	float sigmoid(int t, int midCourse, float speed){
@@ -45,7 +46,12 @@ global {
 	}
 
 	init { 
-		create object from:shape_file_buildings with:[type::string(get("type")), name::string(get("name")),level::int(get("level"))]{
+		if cutShapes{
+			Gama_shape_file <- shape_file("../includes/GamaVectorized_cut.shp");
+		}else{
+			Gama_shape_file <- shape_file("../includes/GamaVectorized.shp");
+		}
+		create object from:Gama_shape_file with:[type::string(get("type")), name::string(get("name")),level::int(get("level"))]{
 			if (type = "circle"){
 			  do die;
 		    }
@@ -71,9 +77,6 @@ global {
 		    }
 		    if (name = "donut5"){
 		    	color<-rgb(#gamaorange,25);
-		    }
-		    if (name = "donut2" or name = "donut4"){
-		 //   	do die;
 		    }
 		    if (name = "rond"){
 		    	color<-rgb(#gamared,70);
@@ -167,7 +170,11 @@ species object skills:[moving]{
 	aspect obj {
 		if name = "donut2" or name = "donut4"{
 			if innerRings{
-				color <- world.changeColor(cycle);
+				if mode = "Dark"{
+					color <- rgb(20,20,20);
+				}else{
+					color <- world.changeColor(cycle);				
+				}
 			}else{
 				color <- rgb(#white,0);
 			}
@@ -195,6 +202,7 @@ experiment Dark_Mode  type: gui autorun:false{
 	float minimum_cycle_duration<-0.016#sec;
 	parameter 'Mode' var: mode   category: "Preferences";
 	parameter 'Inner rings' var: innerRings   category: "Preferences";
+	parameter 'Cut Shapes' var: cutShapes   category: "Preferences";
 	output {
 		display complex  background: world.changeColor(cycle) type: 3d axes:false autosave:false fullscreen:false toolbar:false{
 		  species object aspect:obj;			
