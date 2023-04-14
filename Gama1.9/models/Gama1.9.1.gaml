@@ -118,9 +118,23 @@ species blob{
 
 grid blob_field width: 100 height: 100 use_regular_agents: false neighbors: 8 parallel:false{	
 	float dif <- 0.5;
-	float cohesion <- 0.8;
+	float cohesion <- 0.1;
 	int nb;
 		
+//	reflex diffusion{
+//	//	float quantity <- dif * grid_value/8;
+//		float quantity <- grid_value/8;
+//		point vec <- {the_blob.location.x - grid_x, the_blob.location.y - grid_y};
+//	//	grid_value <- grid_value - nb * quantity;
+//		ask neighbors{
+//			float scal <-  (self.grid_x - myself.grid_x) * vec.x+ (self.grid_y - myself.grid_y) * vec.y;
+//			float dif2 <- scal > 0 ? dif:max(0,dif + scal*cohesion*norm(vec));
+//			//float dif2 <- min(2*dif,max(0,dif - scal*cohesion*norm(vec)));
+//			self.grid_value <- self.grid_value + dif2*quantity;
+//			myself.grid_value <- myself.grid_value - dif2 * quantity;
+//		}
+//	}	
+	
 	reflex diffusion{
 		float quantity <- dif * grid_value/8;
 		grid_value <- grid_value - nb * quantity;
@@ -130,16 +144,19 @@ grid blob_field width: 100 height: 100 use_regular_agents: false neighbors: 8 pa
 	}
 		
 		
-//	reflex cohesion_force{
-//		float quantity <- cohesion * grid_value/5;
-//		ask neighbors{
-//			float scal <-  (self.grid_x - myself.grid_x) * (the_blob.location.x - myself.grid_x)* (self.grid_y - myself.grid_y) * (the_blob.location.y - myself.grid_y);
-//			if scal > 0 {
-//				self.grid_value <- self.grid_value + scal*quantity;
-//				myself.grid_value <- myself.grid_value - scal * quantity;
-//			}			
-//		}
-//	}
+	reflex cohesion_force{
+		point vec <- {the_blob.location.x - grid_x, the_blob.location.y - grid_y};
+		float quantity <- min(1,cohesion * norm(vec)^2) * grid_value/3;
+		
+		ask neighbors{
+			float scal <-  (self.grid_x - myself.grid_x) * vec.x+ (self.grid_y - myself.grid_y) * vec.y;
+			if scal > 0.2 {
+				float dif2 <- min(2*dif,max(0,dif + scal*cohesion*norm(vec)));
+				self.grid_value <- self.grid_value + scal*quantity;
+				myself.grid_value <- myself.grid_value - scal * quantity;
+			}			
+		}
+	}
 	
 	
 }
@@ -167,7 +184,7 @@ float minimum_cycle_duration<-0.025#sec;
 			//mesh blob_field grayscale:true scale: 0.05 triangulation: true smooth: true refresh: false;
 			grid blob_field elevation: true grayscale: true triangulation: true;
 	//		mesh env grayscale:true scale: 0.05 triangulation: true smooth: true refresh: false;
-		 	species object aspect:obj;		
+		 //	species object aspect:obj;		
 		  	
 		}
 	}
