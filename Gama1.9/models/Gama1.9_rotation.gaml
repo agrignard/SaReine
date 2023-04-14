@@ -11,9 +11,11 @@ global {
 	point origin <- {490,490,0};
 	float color_speed <- 2.0;
 	file Gama_shape_file <- shape_file("../includes/GamaVectorized_cut.shp");
+	string sound_file <-"../includes/sound.mp3";
 	string mode <- "Light to dark" among: ["Light to dark", "Dark to light", "Light", "Dark"];
-	bool innerRings <- false;
-	bool cutShapes <- true;
+	bool inner_rings <- false;
+	bool cut_shapes <- true;
+
 	
 	//definition of the geometry of the world agent (environment) as the envelope of the shapefile
 	geometry shape <- envelope(Gama_shape_file);
@@ -46,7 +48,7 @@ global {
 	}
 
 	init { 
-		if cutShapes{
+		if cut_shapes{
 			Gama_shape_file <- shape_file("../includes/GamaVectorized_cut.shp");
 		}else{
 			Gama_shape_file <- shape_file("../includes/GamaVectorized.shp");
@@ -128,6 +130,11 @@ global {
 			}
 		}
 	}  
+	
+//	reflex play_sound when: cycle = 1{
+//			start_sound source: sound_file;
+//	}
+
 } 
 
 
@@ -141,7 +148,7 @@ species object skills:[moving]{
 	list<object> linked_objects <- [];
 	float depth <- 0.0;
 	point origin;
-	point shift;
+	point shift;		
 
 	action propagate_rotation(float angle,point ax, point centre){
 		origin <- centre + (( origin - centre) rotated_by (angle::ax));
@@ -169,7 +176,7 @@ species object skills:[moving]{
 	
 	aspect obj {
 		if name = "donut2" or name = "donut4"{
-			if innerRings{
+			if inner_rings{
 				if mode = "Dark"{
 					color <- rgb(20,20,20);
 				}else{
@@ -199,10 +206,11 @@ species object skills:[moving]{
 }	
 
 experiment Dark_Mode  type: gui autorun:false{
-	float minimum_cycle_duration<-0.016#sec;
+	//float minimum_cycle_duration<-0.016#sec;
+	float minimum_cycle_duration<-0.025#sec;
 	parameter 'Mode' var: mode   category: "Preferences";
-	parameter 'Inner rings' var: innerRings   category: "Preferences";
-	parameter 'Cut Shapes' var: cutShapes   category: "Preferences";
+	parameter 'Inner rings' var: inner_rings   category: "Preferences";
+	parameter 'Cut Shapes' var: cut_shapes   category: "Preferences";
 	output {
 		display complex  background: world.changeColor(cycle) type: 3d axes:false autosave:false fullscreen:false toolbar:false{
 		  species object aspect:obj;			
