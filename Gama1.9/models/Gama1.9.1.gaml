@@ -46,19 +46,16 @@ global {
 
 	init { 
 		create object from:Gama_shape_file with:[type::string(get("type")), name::string(get("name"))]{
-			if (type = "circle"){
-			  do die;
-		    }
 		    color<-#white;
 		    if (name = "gamablue"){
 		    	color<-#gamablue;
 		    	depth <- 60.0;
 		    }
-		    if (name = "gamaorange"){
+		    if (name = "gamared"){
 		    	color<-#gamared;
 		    	depth <- 70.0;
 		    }
-		    if (name = "gamayellow"){
+		    if (name = "gamaorange"){
 		    	color<-#gamaorange;
 		    	depth <- 100.0;
 		    }
@@ -74,7 +71,7 @@ global {
 		    	color<-rgb(#gamaorange,25);
 		    	depth <- 80.0;
 		    }
-		    if (name = "rond"){
+		    if (name = "circle"){
 		    	color<-rgb(#gamared,70);
 		    	color<-#gamared;
 		    }
@@ -86,77 +83,78 @@ global {
 		create blob{
 			the_blob <- self;
 		}
-		ask the_blob {do blob_seed({50,50},30.0,300.0);}
-		ask blob_field{
-			nb <- length(neighbors);
+		ask the_blob {
+			do blob_seed({50,50},10.0,500.0);
+			location <- {50,50};
+		}
+		ask object{
+			ask inside(blob_field, self.shape){
+				height <- max(height, myself.depth);
+			//	grid_value <- height;
+			}
 		}
 	}
 	
 	
 	reflex stats{
-		write sum(blob_field collect(each.grid_value));
+	//	write "cycle "+cycle+" : "+sum(blob_field collect(each.grid_value));
+	}
+	
+	
+	
+	
+	reflex truc when: cycle = 20{
+		ask the_blob {do blob_seed({50,50},10.0,10.0);}
 	}
 } 
 
 
 
 species blob{
-
+	float total_blob_weight;
 	
 	action blob_seed(point centre, float radius, float quantity){
+	//	write "seeding";
 		ask blob_field{
-			float dist <- (grid_x-centre.x)^2+(grid_y-centre.y)^2;
+			float dist <- sqrt((grid_x-centre.x)^2+(grid_y-centre.y)^2);
 			if dist < radius {
 				grid_value <- grid_value + quantity*cos(asin(dist/radius));
 			}
 		}
-		location <- centre;
+	}
+
+	
+	reflex coordinate_blobs{
+		total_blob_weight <- sum(blob_field collect(each.grid_value));
+		ask blob_field{
+			old_value <- grid_value;
+		}
 	}
 		
 }
 
 
-grid blob_field width: 100 height: 100 use_regular_agents: false neighbors: 8 parallel:false{	
-	float dif <- 0.5;
-	float cohesion <- 0.1;
-	int nb;
+grid blob_field width: 100 height: 100 use_regular_agents: false neighbors: 8 parallel:false {	
+	float old_value;
+	float dif <- 0.8;
+	float cohesion <- 0.0002;
+	float height <- 0.0;
 		
-//	reflex diffusion{
-//	//	float quantity <- dif * grid_value/8;
-//		float quantity <- grid_value/8;
-//		point vec <- {the_blob.location.x - grid_x, the_blob.location.y - grid_y};
-//	//	grid_value <- grid_value - nb * quantity;
-//		ask neighbors{
-//			float scal <-  (self.grid_x - myself.grid_x) * vec.x+ (self.grid_y - myself.grid_y) * vec.y;
-//			float dif2 <- scal > 0 ? dif:max(0,dif + scal*cohesion*norm(vec));
-//			//float dif2 <- min(2*dif,max(0,dif - scal*cohesion*norm(vec)));
-//			self.grid_value <- self.grid_value + dif2*quantity;
-//			myself.grid_value <- myself.grid_value - dif2 * quantity;
-//		}
-//	}	
-	
 	reflex diffusion{
-		float quantity <- dif * grid_value/8;
-		grid_value <- grid_value - nb * quantity;
-		ask neighbors{
-			self.grid_value <- self.grid_value + quantity;
-		}
-	}
-		
-		
-	reflex cohesion_force{
+	//	float quantity <- dif * grid_value/8;
+		float quantity <- old_value/8;
 		point vec <- {the_blob.location.x - grid_x, the_blob.location.y - grid_y};
-		float quantity <- min(1,cohesion * norm(vec)^2) * grid_value/3;
-		
+	//	grid_value <- grid_value - nb * quantity;
 		ask neighbors{
 			float scal <-  (self.grid_x - myself.grid_x) * vec.x+ (self.grid_y - myself.grid_y) * vec.y;
-			if scal > 0.2 {
-				float dif2 <- min(2*dif,max(0,dif + scal*cohesion*norm(vec)));
-				self.grid_value <- self.grid_value + scal*quantity;
-				myself.grid_value <- myself.grid_value - scal * quantity;
-			}			
+			float dif2 <- scal > 0 ? dif:max(0,dif + scal*cohesion/the_blob.total_blob_weight*norm(vec)^2);
+			//float dif2 <- min(2*dif,max(0,dif - scal*cohesion*norm(vec)));
+			self.grid_value <- self.grid_value + dif2*quantity;
+			myself.grid_value <- myself.grid_value - dif2 * quantity;
 		}
-	}
+	}	
+	
+
 	
 	
 }
@@ -168,7 +166,7 @@ species object skills:[moving]{
 	float depth <- 0.0;	
 
 	aspect obj {
-		if name = "gamayellow" or name = "gamaorange" or name = "gamablue"{
+		if name = "gamared" or name = "gamaorange" or name = "gamablue"{
 			draw 1 around(shape) depth: depth color:color;	    	
 		}
 			draw shape depth: depth color:color;	    	
@@ -184,7 +182,7 @@ float minimum_cycle_duration<-0.025#sec;
 			//mesh blob_field grayscale:true scale: 0.05 triangulation: true smooth: true refresh: false;
 			grid blob_field elevation: true grayscale: true triangulation: true;
 	//		mesh env grayscale:true scale: 0.05 triangulation: true smooth: true refresh: false;
-		 //	species object aspect:obj;		
+		 	species object aspect:obj;		
 		  	
 		}
 	}

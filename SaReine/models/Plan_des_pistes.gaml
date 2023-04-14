@@ -30,15 +30,23 @@ global {
 			loop i from: 0 to:length(shape.points)-1{
 				float val <- parcelle(shape.points[i]).grid_value;
 				shape <- set_z(shape,i,val+50);
-				
 			}
+			if first(shape.points).z < last(shape.points).z {
+					shape <- polyline(reverse(shape.points));
+			}
+			segment <- {shape.points[1].x-shape.points[0].x,shape.points[1].y-shape.points[0].y,shape.points[1].z-shape.points[0].z};
+			segment_length <-norm(segment);
 		}
 		create aerial_ways from:shape_file_aerial {
-			loop i from: 0 to:length(shape.points)-1{
+			loop i from: 0 to:length(shape.points)-1{	
 				float val <- parcelle(shape.points[i]).grid_value;
 				shape <- set_z(shape,i,val+50);
-				
 			}
+			if first(shape.points).z > last(shape.points).z {
+				shape <- polyline(reverse(shape.points));
+			}
+			segment <- {shape.points[1].x-shape.points[0].x,shape.points[1].y-shape.points[0].y,shape.points[1].z-shape.points[0].z};
+			segment_length <-norm(segment);
 		}
 		
 		create people number:100{
@@ -49,21 +57,42 @@ global {
 			ski<-false;
 		}
 		
-		slopes_graph <- as_edge_graph(slopes);
-		aerial_graph <- as_edge_graph(aerial_ways);
+		slopes_graph <-directed(as_edge_graph(slopes));
+		aerial_graph <- directed(as_edge_graph(aerial_ways));
 		
 	}
 }
 
 species slopes{
+	point segment;
+	float segment_length;
+	
 	aspect base{
 		draw shape color:#blue;
+			float angleTriangle <- acos(segment.x/segment_length);
+		 	angleTriangle <- segment.y<0 ? - angleTriangle : angleTriangle;
+			draw triangle(50) at:  first(shape.points)+ segment*0.5 rotate: 90+angleTriangle color: #blue;
 	}
 }
 
 species aerial_ways{
+	point segment;
+	float segment_length;
 	aspect base{
-		draw shape color:#black width:5;
+		draw shape color:#black width:3;
+		
+		//loop i from: 0 to: segments_number-1{
+		 	 		
+// --------		pour afficher des petits triangles pour indiquer le sens de circulation sur chaque route 
+	
+
+		 			float angleTriangle <- acos(segment.x/segment_length);
+		 			angleTriangle <- segment.y<0 ? - angleTriangle : angleTriangle;
+//					draw triangle(10) at:  first(shape.points)+ {0.5*segment.x,0.5*segment.y,shape.} rotate: 90+angleTriangle color: #black;
+					draw triangle(100) at:  first(shape.points)+ segment*0.5 rotate: 90+angleTriangle color: #black;
+//		 		}
+	//	}
+		
 	}
 }
 
