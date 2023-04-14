@@ -138,6 +138,10 @@ global {
 //			start_sound source: sound_file;
 //	}
 
+	reflex end_video when: cycle  = 650{
+		do pause;
+	}
+
 } 
 
 
@@ -236,8 +240,8 @@ species object skills:[moving]{
 }	
 
 experiment Dark_Mode  type: gui autorun:false{
-	float minimum_cycle_duration<-0.016#sec;
-//	float minimum_cycle_duration<-0.025#sec;
+	//float minimum_cycle_duration<-0.016#sec;
+float minimum_cycle_duration<-0.025#sec;
 	parameter 'Mode' var: mode   category: "Preferences";
 	parameter 'Inner rings' var: inner_rings   category: "Preferences";
 	parameter 'Cut Shapes' var: cut_shapes   category: "Preferences";
