@@ -1,7 +1,7 @@
 /**
-* Name: Complex Object Loading
-* Author:  Arnaud Grignard
-* Description: Provides a  complex geometry to agents (svg,obj or 3ds are accepted). The geometry becomes that of the agents.
+* Name: Gama 1.9
+* Author:  Arnaud Grignard - Tri Nguyen-Huu
+* Description: A toy model demonstrating "morphing" technologies in GAMA
 * Tags:  load_file, 3d, skill, obj
 */
 
@@ -19,9 +19,10 @@ global {
 			if (type = "circle"){
 			  do die;
 		    }
-		   color<-rgb(#black,0);
+		   color<-rgb(#white,0);
 		    if (name = "gamablue"){
 		    	color<-#gamablue;
+		    	location<-{location.x,location.y,1};
 		    }
 		    if (name = "gamaorange"){
 		    	color<-#gamared;
@@ -61,7 +62,7 @@ global {
 				match 2 {
 					axe <- {0,1,0};
 				}
-					match 1 {
+				match 1 {
 					axe <- {1,1,0};
 				}
 			}
@@ -112,7 +113,6 @@ species object skills:[moving]{
 	}
 
 	reflex rotate{
-	
 		shape <- shape rotated_by (rotation_speed,axe);
 	    shift <-  shift rotated_by (rotation_speed::axe);
 	    ask linked_objects{
@@ -120,17 +120,16 @@ species object skills:[moving]{
 	    }
 	}
 	aspect obj {
-		draw shape depth:1 color:color border: #black at: origin +shift;
+		draw shape depth:0 color:color border: color at: origin +shift;
 		//draw sphere(5) at: origin color: #green;
 	}
 			
 }	
 
-experiment Display  type: gui {
-	float minimum_cycle_duration<-0.1#sec;
+experiment Dark_Mode  type: gui autorun:false{
+	float minimum_cycle_duration<-1#sec;
 	output {
-		
-		display complex  background:#black type: 3d axes:false{
+		display complex  background:#black type: 3d axes:false autosave:false fullscreen:false toolbar:false{
 		  species object aspect:obj;			
 		}
 	}
