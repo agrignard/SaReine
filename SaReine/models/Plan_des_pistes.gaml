@@ -24,16 +24,44 @@ global {
 	float offset;
 	graph slopes_graph;
 	graph aerial_graph;
+	
+	graph ski_domain;
 
 	init {
-		create slopes from:shape_file_slopes {
+		create slopes from:shape_file_slopes with:[type::string(get("type")), name::string(get("name"))] {
+			switch type{
+				match "noire"{
+					color <- #black;
+				}
+				match "rouge"{
+					color <- rgb(196,60,57);
+				}
+				match "bleue"{
+					color <- rgb(51,87,187);
+				}
+				match "verte"{
+					color <- rgb(16,175,35);
+				}
+				match "freeride"{
+					color <- #grey;
+				}
+			
+			}
 			loop i from: 0 to:length(shape.points)-1{
 				float val <- parcelle(shape.points[i]).grid_value;
 				shape <- set_z(shape,i,val+50);
 			}
-			if first(shape.points).z < last(shape.points).z {
+			if type = "link"{
+				create slopes {
+					self.type <- "link";
+					shape <- polyline(reverse(myself.shape.points));
+				}
+			}else{
+				if first(shape.points).z < last(shape.points).z {
 					shape <- polyline(reverse(shape.points));
+				}
 			}
+			
 			segment <- {shape.points[1].x-shape.points[0].x,shape.points[1].y-shape.points[0].y,shape.points[1].z-shape.points[0].z};
 			segment_length <-norm(segment);
 		}
@@ -60,15 +88,27 @@ global {
 		slopes_graph <-directed(as_edge_graph(slopes));
 		aerial_graph <- directed(as_edge_graph(aerial_ways));
 		
+		ski_domain <- directed(as_edge_graph(union(slopes, aerial_ways)));
+		
 	}
 }
 
 species slopes{
 	point segment;
 	float segment_length;
+	string type;
+	//bool tunnel;
+	rgb color <- #blue;
 	
 	aspect base{
-		draw shape color:#blue;
+		if type = "tunnel"{
+			draw cube(20#m) at: first(shape.points) color: #black;
+			draw cube(20#m) at:last(shape.points) color: #black;
+		}else{
+			draw shape color: color;
+		}
+		
+		
 			float angleTriangle <- acos(segment.x/segment_length);
 		 	angleTriangle <- segment.y<0 ? - angleTriangle : angleTriangle;
 			draw triangle(50) at:  first(shape.points)+ segment*0.5 rotate: 90+angleTriangle color: #blue;
@@ -78,6 +118,7 @@ species slopes{
 species aerial_ways{
 	point segment;
 	float segment_length;
+	
 	aspect base{
 		draw shape color:#black width:3;
 		
@@ -101,7 +142,9 @@ species people skills:[moving]{
 	bool ski<-true;
 	
 	reflex move{
-		do wander on:ski ? slopes_graph:aerial_graph ;
+		speed <- 10;
+		//do wander on:ski ? slopes_graph:aerial_graph ;
+		do wander on:ski_domain ;
 	}
 	aspect base{
 		draw circle(50#m) color:ski?#black:#red;
