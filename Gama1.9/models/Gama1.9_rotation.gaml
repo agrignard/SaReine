@@ -98,6 +98,9 @@ global {
 		    	origin <- first(object where (each.name="rond")).location;
 		    	depth <- 1.0;
 		    	 location<-location  + {0,0,depth/2};
+		    	// if name="neuf"{
+		    	 	rotation_speed <- 0.0;
+		    	// }
 		    }
 			switch level {
 				match 5 {
@@ -189,12 +192,39 @@ species object skills:[moving]{
 		switch name{
 			match "un"{
 		 		color <- rgb(#white,2*(cycle-350));
+		 		if cycle < 320 {
+		 			color <- rgb(#white,0);
+		 		}else{
+		 			color <- #white;
+		 		}
+		 		if cycle > 500{
+		    		color <- blend(#white,#gamared,(cycle-500)/150);
+		    	} else {
+		    		color <- rgb(#white,0);
+		    	}
 		    } 
 		    match "point"{
 		    	color <- rgb(#white,2*(cycle-350));
+		    	if cycle < 320 {
+		 			color <- rgb(#white,0);
+		 		}else{
+		 			color <- #white;
+		 		}
+		 		if cycle > 500{
+		    		color <- blend(#white,#gamared,(cycle-500)/150);
+		    	} else {
+		    		color <- rgb(#white,0);
+		    	}
 		    }
 		     match "neuf"{
 		    	color <- rgb(#white,cycle-300);
+		    	color <- rgb(#white,cycle-500);
+		    	int start_cycle <- 500;
+		    	if cycle > start_cycle{
+		    		color <- blend(#white,#gamared,(cycle-start_cycle)/150);
+		    	} else {
+		    		color <- rgb(#white,0);
+		    	}
 		    }
 		   match "rond"{
 		    	color <- rgb(#gamared,255*world.sigmoid(cycle, 380, 0.04));
@@ -206,8 +236,8 @@ species object skills:[moving]{
 }	
 
 experiment Dark_Mode  type: gui autorun:false{
-	//float minimum_cycle_duration<-0.016#sec;
-	float minimum_cycle_duration<-0.025#sec;
+	float minimum_cycle_duration<-0.016#sec;
+//	float minimum_cycle_duration<-0.025#sec;
 	parameter 'Mode' var: mode   category: "Preferences";
 	parameter 'Inner rings' var: inner_rings   category: "Preferences";
 	parameter 'Cut Shapes' var: cut_shapes   category: "Preferences";
