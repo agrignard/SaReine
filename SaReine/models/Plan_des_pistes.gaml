@@ -271,7 +271,7 @@ species people skills:[moving]{
 }
 
 /*******************Agent grille de parcelle (montagne)**************************** */
-grid parcelle file: grid_data neighbors: 8  {
+grid parcelle file: grid_data neighbors: 8  frequency:0{
 	float altitude<-grid_value;  // altitude d'apres le MNT
 	float hauteur_neige_couche_inf; //couche dure
 	float hauteur_neige_couche_sup; //couche plus molle au dessus
