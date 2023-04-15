@@ -126,13 +126,13 @@ global {
 		}
 	}  
 	
-	reflex play_sound when: cycle = 1{
-			start_sound source: sound_file;
-	}
-
-	reflex end_animation when: cycle  = 650{
-		do pause;
-	}
+//	reflex play_sound when: cycle = 1{
+//			start_sound source: sound_file;
+//	}
+//
+//	reflex end_animation when: cycle  = 650{
+//		do pause;
+//	}
 } 
 
 // definition of the parts of the animated 3d model
@@ -161,12 +161,12 @@ species object skills:[moving]{
 
 // rotate the object and linked inner objects
 	reflex rotate{
-		if cycle > 293 {
-			rotation_speed <- rotation_speed / 1.015;
-		}
-		if cycle = 600{
-			rotation_speed <- 0.0;
-		}
+//		if cycle > 293 {
+//			rotation_speed <- rotation_speed / 1.015;
+//		}
+//		if cycle = 600{
+//			rotation_speed <- 0.0;
+//		}
 		shape <- shape rotated_by (rotation_speed,axe);
 	    shift <-  shift rotated_by (rotation_speed::axe);
 	    ask linked_objects{

@@ -111,7 +111,7 @@ species slopes{
 		
 			float angleTriangle <- acos(segment.x/segment_length);
 		 	angleTriangle <- segment.y<0 ? - angleTriangle : angleTriangle;
-			draw triangle(50) at:  first(shape.points)+ segment*0.5 rotate: 90+angleTriangle color: #blue;
+			draw triangle(40) at:  first(shape.points)+ segment*0.5 rotate: 90+angleTriangle color: #blue;
 	}
 }
 
@@ -130,7 +130,7 @@ species aerial_ways{
 		 			float angleTriangle <- acos(segment.x/segment_length);
 		 			angleTriangle <- segment.y<0 ? - angleTriangle : angleTriangle;
 //					draw triangle(10) at:  first(shape.points)+ {0.5*segment.x,0.5*segment.y,shape.} rotate: 90+angleTriangle color: #black;
-					draw triangle(100) at:  first(shape.points)+ segment*0.5 rotate: 90+angleTriangle color: #black;
+					draw triangle(40) at:  first(shape.points)+ segment*0.5 rotate: 90+angleTriangle color: #black;
 //		 		}
 	//	}
 		
@@ -142,12 +142,24 @@ species people skills:[moving]{
 	bool ski<-true;
 	
 	reflex move{
-		speed <- 10;
+		speed <- 10.0;
 		//do wander on:ski ? slopes_graph:aerial_graph ;
 		do wander on:ski_domain ;
 	}
+	
+	reflex test when: int(self)=0 {
+		//write species(current_edge);
+	}
+	
+	
 	aspect base{
-		draw circle(50#m) color:ski?#black:#red;
+		if current_edge != nil and species(current_edge) = slopes{
+			draw circle(50#m) color:#black;
+		}
+		else{
+			draw circle(50#m) color:#red;
+		}
+//		draw circle(50#m) color:ski?#black:#red;
 	}
 }
 
