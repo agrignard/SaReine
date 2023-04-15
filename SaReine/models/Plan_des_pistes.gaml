@@ -26,9 +26,22 @@ global {
 	graph aerial_graph;
 	
 	graph ski_domain;
+	
+	graph_debug debugger;
 
 	init {
-		create slopes from:shape_file_slopes with:[type::string(get("type")), name::string(get("name"))] {
+		create aerial_ways from:shape_file_aerial {
+			loop i from: 0 to:length(shape.points)-1{	
+				float val <- parcelle(shape.points[i]).grid_value;
+				shape <- set_z(shape,i,val+50);
+			}
+			if first(shape.points).z > last(shape.points).z {
+				shape <- polyline(reverse(shape.points));
+			}
+			segment <- {shape.points[1].x-shape.points[0].x,shape.points[1].y-shape.points[0].y,shape.points[1].z-shape.points[0].z};
+			segment_length <-norm(segment);
+		}
+		create slopes from:shape_file_slopes with:[type::string(get("type")), name::string(get("name")), reverse::string(get("reverse"))] {
 			switch type{
 				match "noire"{
 					color <- #black;
@@ -61,21 +74,21 @@ global {
 					shape <- polyline(reverse(shape.points));
 				}
 			}
+			if type = "acces"{
+//				write "debut "+first(shape.points);
+//				write aerial_ways collect(each);
+				if (first(shape.points) in (aerial_ways collect first(each.shape.points))) or (last(shape.points) in (aerial_ways collect last(each.shape.points))){
+					shape <- polyline(reverse(shape.points));
+				}
+			}
+			if  reverse{
+				shape <- polyline(reverse(shape.points));
+			}
 			
 			segment <- {shape.points[1].x-shape.points[0].x,shape.points[1].y-shape.points[0].y,shape.points[1].z-shape.points[0].z};
 			segment_length <-norm(segment);
 		}
-		create aerial_ways from:shape_file_aerial {
-			loop i from: 0 to:length(shape.points)-1{	
-				float val <- parcelle(shape.points[i]).grid_value;
-				shape <- set_z(shape,i,val+50);
-			}
-			if first(shape.points).z > last(shape.points).z {
-				shape <- polyline(reverse(shape.points));
-			}
-			segment <- {shape.points[1].x-shape.points[0].x,shape.points[1].y-shape.points[0].y,shape.points[1].z-shape.points[0].z};
-			segment_length <-norm(segment);
-		}
+		
 		
 		create people number:100{
 			location<-any_location_in(one_of(slopes));
@@ -90,15 +103,93 @@ global {
 		
 		ski_domain <- directed(as_edge_graph(union(slopes, aerial_ways)));
 		
+		create graph_debug{
+			debugger <- self;
+		}
+		ask debugger {do test_graph;}
+		
 	}
+	
+	
 }
 
+//////////////////////////////////////////
+
+species graph_debug{
+	// for graph test
+	list<point> dead_end;
+	list<point> unreachable;
+	list<point> mergeable;
+	
+	action test_graph{
+		write "testin graph";
+		list<agent> edges <-union(slopes, aerial_ways);
+		// testing slopes geometries
+		ask edges{
+			if length(shape.points) < 2 {
+				write 'Edge '+self+' has only '+length(shape.points)+" vertices.";
+			}
+		}
+		// testing wrong access edges (only telecabin at one extremity)
+		list<point> aerial_way_extremities <- aerial_ways accumulate([first(each.shape.points),last(each.shape.points)]);
+		ask slopes where (each.type="acces"){
+			if (first(shape.points) in aerial_way_extremities) and (last(shape.points) in aerial_way_extremities){
+				write "Access slope "+self+" is linked to two gondolas.";
+			}
+		}
+		// testing orphan vertices
+		list<point> end_vertices <- remove_duplicates(edges collect (last(each.shape.points)));
+		list<point> start_vertices <- remove_duplicates(edges collect (first(each.shape.points)));
+		loop v over: end_vertices{
+			if not(v in start_vertices){
+				//write "Vertice "+v+" is a dead end.";
+				dead_end <- dead_end + v;
+			}
+		}
+		write "There are "+length(dead_end)+" dead ends.";
+		loop v over: start_vertices{
+			if not(v in end_vertices){
+		//		write "Vertice "+v+" is unreachable.";
+				unreachable <- unreachable + v;
+			}
+		}
+		write "There are "+length(unreachable)+" unreachable points.";
+		loop v over: (end_vertices-dead_end-unreachable){
+			list<slopes> slopes_with_v <- slopes where (v in [first(each.shape.points),last(each.shape.points)]);
+			list<aerial_ways> a_with_v <- aerial_ways where (v in [first(each.shape.points),last(each.shape.points)]);
+			if (length(slopes_with_v)+length(a_with_v)<3) and !(length(slopes_with_v)=1 and length(a_with_v)=1) {
+		//		write "Vertice "+v+" is mergeable.";
+				mergeable <- mergeable + v;
+			}	
+		}
+		list<point> truc <- (slopes where (each.type = "tunnel")) accumulate ([first(each.shape.points), last(each.shape.points)]);
+		mergeable <- mergeable - (slopes where (each.type = "tunnel")) accumulate ([first(each.shape.points), last(each.shape.points)]);
+		write "There are "+length(mergeable)+" mergeable points.";
+	}
+	
+	aspect base{
+		loop v over: dead_end{
+			draw circle(5) at: v color: #red depth: 1000;
+		}		
+		loop v over: unreachable{
+			draw circle(5) at: v color: #orange depth: 1000;
+		}		loop v over: mergeable{
+			draw circle(5) at: v color: #purple depth: 1000;
+		}
+	}
+	
+}
+
+
+
+////////////////////////////////////
 species slopes{
 	point segment;
 	float segment_length;
 	string type;
+	bool reverse;
 	//bool tunnel;
-	rgb color <- #blue;
+	rgb color <- #brown;
 	
 	aspect base{
 		if type = "tunnel"{
@@ -111,7 +202,7 @@ species slopes{
 		
 			float angleTriangle <- acos(segment.x/segment_length);
 		 	angleTriangle <- segment.y<0 ? - angleTriangle : angleTriangle;
-			draw triangle(40) at:  first(shape.points)+ segment*0.5 rotate: 90+angleTriangle color: #blue;
+			draw triangle(10) at:  first(shape.points)+ segment*0.5 rotate: 90+angleTriangle color: #blue;
 	}
 }
 
@@ -199,7 +290,8 @@ experiment demo type: gui {
 			grid parcelle   elevation:grid_value  	grayscale:true triangulation: true refresh: false;
 			species slopes aspect:base position:{0,0,0.0};
 			species aerial_ways aspect:base position:{0,0,0.0};
-			species people aspect:base;
+		//	species people aspect:base;
+			species graph_debug aspect: base;
 		}
 			
 
