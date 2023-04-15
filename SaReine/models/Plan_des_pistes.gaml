@@ -48,7 +48,7 @@ global {
 				}
 			}
 		}
-		create slopes from:shape_file_slopes with:[type::string(get("type")), name::string(get("name")), reverse::string(get("reverse"))] {
+		create slopes from:shape_file_slopes with:[type::string(get("type")), name::string(get("name")), sens::string(get("sens"))] {
 			switch type{
 				match "noire"{
 					color <- #black;
@@ -71,27 +71,26 @@ global {
 				float val <- parcelle(shape.points[i]).grid_value;
 				shape <- set_z(shape,i,val+50);
 			}
-			if type = "link"{
-				create slopes {
-					self.type <- "link";
-					shape <- polyline(reverse(myself.shape.points));
-				}
-			}else{
-				if first(shape.points).z < last(shape.points).z {
+			if first(shape.points).z < last(shape.points).z {
+				shape <- polyline(reverse(shape.points));
+			}
+			switch sens{
+				match "inverse"{
 					shape <- polyline(reverse(shape.points));
+				}
+				match "plat"{
+					create slopes {
+						self.type <- "link";
+						shape <- polyline(reverse(myself.shape.points));
+					}
 				}
 			}
 			if type = "acces"{
-//				write "debut "+first(shape.points);
-//				write aerial_ways collect(each);
 				if (first(shape.points) in (aerial_ways collect first(each.shape.points))) or (last(shape.points) in (aerial_ways collect last(each.shape.points))){
 					shape <- polyline(reverse(shape.points));
 				}
 			}
-			if  reverse{
-				shape <- polyline(reverse(shape.points));
-			}
-			
+					
 			segment <- {shape.points[1].x-shape.points[0].x,shape.points[1].y-shape.points[0].y,shape.points[1].z-shape.points[0].z};
 			segment_length <-norm(segment);
 		}
@@ -194,7 +193,7 @@ species slopes{
 	point segment;
 	float segment_length;
 	string type;
-	bool reverse;
+	string sens;
 	//bool tunnel;
 	rgb color <- #brown;
 	
@@ -301,7 +300,7 @@ experiment demo type: gui {
 			grid parcelle   elevation:grid_value  	grayscale:true triangulation: true refresh: false;
 			species slopes aspect:base position:{0,0,0.0};
 			species aerial_ways aspect:base position:{0,0,0.0};
-			species people aspect:base;
+		//	species people aspect:base;
 			species graph_debug aspect: base;
 		}
 			
