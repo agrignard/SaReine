@@ -41,16 +41,15 @@ global {
 			if first(shape.points).z > last(shape.points).z {
 				shape <- polyline(reverse(shape.points));
 			}
-			segment <- {shape.points[1].x-shape.points[0].x,shape.points[1].y-shape.points[0].y,shape.points[1].z-shape.points[0].z};
-			segment_length <-norm(segment);
+			
 			if two_ways = true{
 				create aerial_ways {
 					shape <- polyline(reverse(myself.shape.points));
-					segment <- {shape.points[1].x-shape.points[0].x,shape.points[1].y-shape.points[0].y,shape.points[1].z-shape.points[0].z};
-					segment_length <-norm(segment);
+					visible <- false;
 				}
 			}
 		}
+		
 		create slopes from:shape_file_slopes with:[type::string(get("type")), name::string(get("name")), sens::string(get("sens"))] {
 			switch type{
 				match "noire"{
@@ -86,10 +85,6 @@ global {
 						self.type <- "link";
 						shape <- polyline(reverse(myself.shape.points));
 						visible <- false;
-						segment <- {shape.points[1].x-shape.points[0].x,shape.points[1].y-shape.points[0].y,shape.points[1].z-shape.points[0].z};
-						segment_length <-norm(segment);
-						angleTriangle <- acos(segment.x/segment_length);
-					 	angleTriangle <- segment.y<0 ? - angleTriangle : angleTriangle;
 					}
 				}
 			}
@@ -98,21 +93,17 @@ global {
 					shape <- polyline(reverse(shape.points));
 				}
 			}		
-			segment <- {shape.points[1].x-shape.points[0].x,shape.points[1].y-shape.points[0].y,shape.points[1].z-shape.points[0].z};
-			segment_length <-norm(segment);
-			angleTriangle <- acos(segment.x/segment_length);
-		 	angleTriangle <- segment.y<0 ? - angleTriangle : angleTriangle;
+		}
+		
+		ask union(slopes,aerial_ways){
+			do compute_segment;
 		}
 		
 		
-		create people number:200{
+		create people number:400{
 			location<-any_location_in(one_of(union(slopes, aerial_ways)));
 			last_positions <- list_with(nb_last_positions,location);
 		}
-//		create people number:50{
-//			location<-any_location_in(one_of(aerial_ways));
-//			ski<-false;
-//		}
 		
 		slopes_graph <-directed(as_edge_graph(slopes));
 		aerial_graph <- directed(as_edge_graph(aerial_ways));
@@ -126,10 +117,24 @@ global {
 		
 	}
 	
-	
 }
 
 //////////////////////////////////////////
+
+
+species generic_edge{
+	point segment;
+	float segment_length;
+	float angleTriangle;
+	bool visible <- true;
+	
+	action compute_segment{
+		segment <- {shape.points[1].x-shape.points[0].x,shape.points[1].y-shape.points[0].y,shape.points[1].z-shape.points[0].z};
+		segment_length <-norm(segment);
+		angleTriangle <- acos(segment.x/segment_length);
+		angleTriangle <- segment.y<0 ? - angleTriangle : angleTriangle;
+	}
+}
 
 species graph_debug{
 	// for graph test
@@ -199,14 +204,12 @@ species graph_debug{
 
 
 ////////////////////////////////////
-species slopes{
-	point segment;
-	float segment_length;
+
+
+species slopes parent: generic_edge{
 	string type;
 	string sens;
-	bool visible <- true;
 	rgb color <- #brown;
-	float angleTriangle;
 	
 	aspect base{
 		if show_slopes{
@@ -226,47 +229,47 @@ species slopes{
 ///////////////////////
 
 
-species aerial_ways{
-	point segment;
-	float segment_length;
+species aerial_ways parent: generic_edge{
 	bool two_ways;
 	
 	aspect base{
-		draw shape color:#black width:3;
-		 	float angleTriangle <- acos(segment.x/segment_length);
-		 	angleTriangle <- segment.y<0 ? - angleTriangle : angleTriangle;
-			draw triangle(40) at:  first(shape.points)+ segment*0.5 rotate: 90+angleTriangle color: #black;
+		if visible{
+			draw shape color:#black width:2;
+		}
+		draw triangle(40) at:  first(shape.points)+ segment*0.5 rotate: 90+angleTriangle color: #black;
 	}
 }
 
 species people skills:[moving]{
 	list<point> last_positions;
-	bool ski<-true;
-	
+	int delay <- rnd(359);
+	float turn_speed <- rnd(1.0,10.0);
+	float amplitude <- 60#m;
+	point shifted_location;
+	float base_speed <- rnd(2.0,9.0);
 	
 	reflex move{
-		speed <- 5.0;
-		//do wander on:ski ? slopes_graph:aerial_graph ;
+		if current_edge != nil and species(current_edge) = aerial_ways{
+			speed <- 3.0;
+		}else{
+			speed <- base_speed;
+		}
+		
 		do wander on:ski_domain ;
-		point shift <- {0,1,0};
-		last_positions <- last(nb_last_positions-1,last_positions)+(location + (shift rotated_by (heading::{0,0,1}))*60#m*cos(4*cycle));
+		shifted_location <- location + ({0,1,0} rotated_by (heading::{0,0,1}))*amplitude*cos(turn_speed*cycle+delay);
+		last_positions <- last(nb_last_positions-1,last_positions)+shifted_location;
 	}
 	
 	
 	aspect base{
 		if current_edge != nil and species(current_edge) = slopes{
-//			draw triangle(50#m) color:#black rotate: heading+90;
-			//draw triangle(50#m) color:#black rotate: heading+90+90*cos(4*cycle);
-			point shift <- {0,1,0};
-		//	draw triangle(30#m) color: #green at: location + (shift rotated_by (heading::{0,0,1}))*80#m*cos(4*cycle) rotate: heading+90+90*cos(4*cycle);
-			draw rectangle(15#m,40#m) color: #black at: location + (shift rotated_by (heading::{0,0,1}))*60#m*cos(4*cycle) rotate: heading+90+60*cos(90+4*cycle);
-//			draw polyline([location, location + shift*80#m]) rotate: heading color: #green;
+			draw rectangle(15#m,40#m) color: #black at: shifted_location rotate: heading+90+60*cos(90+turn_speed*cycle+delay);
 			draw polyline(last_positions) color: #grey;
+			//draw polyline(last_positions) color: slopes(current_edge).color;
 		}
 		else{
-			draw triangle(50#m) color:#red rotate: heading+90;
+			draw rectangle(15#m,40#m) color:#black rotate: heading+90;
 		}
-//		draw circle(50#m) color:ski?#black:#red;
 	}
 }
 
@@ -282,12 +285,12 @@ grid parcelle file: grid_data neighbors: 8  frequency:0{
    	rgb ma_couleur;	//couleur pour verif
    
    //calcul de la heuteur de neige et définition de la couleur
-	reflex neige_couleur  {
-    	hauteur_neige<-hauteur_neige_couche_sup+hauteur_neige_couche_inf;
-   	
-   		if (hauteur_neige_couche_sup=0) {ma_couleur<-#red;}
- 		else {ma_couleur<-#green;}
-   }
+//	reflex neige_couleur  {
+//    	hauteur_neige<-hauteur_neige_couche_sup+hauteur_neige_couche_inf;
+//   	
+//   		if (hauteur_neige_couche_sup=0) {ma_couleur<-#red;}
+// 		else {ma_couleur<-#green;}
+//   }
 
 	aspect basic	{
         //juste pour vérifier (faut ajouter l'agent parcelle dans le display si on veut le voir)
@@ -302,14 +305,14 @@ grid parcelle file: grid_data neighbors: 8  frequency:0{
  ***********************************************/
 experiment demo type: gui {
 	parameter 'Show slopes' var: show_slopes   category: "Preferences";
-	parameter 'Trail size' var: nb_last_positions min:0 max:100  category: "Preferences";
+	parameter 'Trail size' var: nb_last_positions min:0 max:200  category: "Preferences";
 	output synchronized: true{
 		display "carte" type: opengl {
 			grid parcelle   elevation:grid_value  	grayscale:true triangulation: true refresh: false;
 			species slopes aspect:base position:{0,0,0.0};
 			species aerial_ways aspect:base position:{0,0,0.0};
 			species people aspect:base;
-		//	species graph_debug aspect: base;
+			species graph_debug aspect: base;
 		}
 			
 
