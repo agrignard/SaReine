@@ -30,7 +30,7 @@ global {
 	graph_debug debugger;
 
 	init {
-		create aerial_ways from:shape_file_aerial {
+		create aerial_ways from:shape_file_aerial with:[two_ways:bool(get("two_ways"))]{
 			loop i from: 0 to:length(shape.points)-1{	
 				float val <- parcelle(shape.points[i]).grid_value;
 				shape <- set_z(shape,i,val+50);
@@ -40,6 +40,13 @@ global {
 			}
 			segment <- {shape.points[1].x-shape.points[0].x,shape.points[1].y-shape.points[0].y,shape.points[1].z-shape.points[0].z};
 			segment_length <-norm(segment);
+			if two_ways = true{
+				create aerial_ways {
+					shape <- polyline(reverse(myself.shape.points));
+					segment <- {shape.points[1].x-shape.points[0].x,shape.points[1].y-shape.points[0].y,shape.points[1].z-shape.points[0].z};
+					segment_length <-norm(segment);
+				}
+			}
 		}
 		create slopes from:shape_file_slopes with:[type::string(get("type")), name::string(get("name")), reverse::string(get("reverse"))] {
 			switch type{
@@ -206,9 +213,13 @@ species slopes{
 	}
 }
 
+///////////////////////
+
+
 species aerial_ways{
 	point segment;
 	float segment_length;
+	bool two_ways;
 	
 	aspect base{
 		draw shape color:#black width:3;
