@@ -16,6 +16,7 @@ model Avalanche
 
 global {
 	bool show_slopes <- true;
+	int nb_last_positions <- 50;
 	
 	//données SIG
 	file grid_data <- grid_file("../includes/Alpes250.asc");
@@ -104,13 +105,14 @@ global {
 		}
 		
 		
-		create people number:100{
-			location<-any_location_in(one_of(slopes));
+		create people number:200{
+			location<-any_location_in(one_of(union(slopes, aerial_ways)));
+			last_positions <- list_with(nb_last_positions,location);
 		}
-		create people number:50{
-			location<-any_location_in(one_of(aerial_ways));
-			ski<-false;
-		}
+//		create people number:50{
+//			location<-any_location_in(one_of(aerial_ways));
+//			ski<-false;
+//		}
 		
 		slopes_graph <-directed(as_edge_graph(slopes));
 		aerial_graph <- directed(as_edge_graph(aerial_ways));
@@ -241,20 +243,25 @@ species people skills:[moving]{
 	list<point> last_positions;
 	bool ski<-true;
 	
+	
 	reflex move{
-		speed <- 10.0;
+		speed <- 5.0;
 		//do wander on:ski ? slopes_graph:aerial_graph ;
 		do wander on:ski_domain ;
-	}
-	
-	reflex test when: int(self)=0 {
-		//write species(current_edge);
+		point shift <- {0,1,0};
+		last_positions <- last(nb_last_positions-1,last_positions)+(location + (shift rotated_by (heading::{0,0,1}))*60#m*cos(4*cycle));
 	}
 	
 	
 	aspect base{
 		if current_edge != nil and species(current_edge) = slopes{
-			draw triangle(50#m) color:#black rotate: heading+90;
+//			draw triangle(50#m) color:#black rotate: heading+90;
+			//draw triangle(50#m) color:#black rotate: heading+90+90*cos(4*cycle);
+			point shift <- {0,1,0};
+		//	draw triangle(30#m) color: #green at: location + (shift rotated_by (heading::{0,0,1}))*80#m*cos(4*cycle) rotate: heading+90+90*cos(4*cycle);
+			draw rectangle(15#m,40#m) color: #black at: location + (shift rotated_by (heading::{0,0,1}))*60#m*cos(4*cycle) rotate: heading+90+60*cos(90+4*cycle);
+//			draw polyline([location, location + shift*80#m]) rotate: heading color: #green;
+			draw polyline(last_positions) color: #grey;
 		}
 		else{
 			draw triangle(50#m) color:#red rotate: heading+90;
@@ -295,6 +302,7 @@ grid parcelle file: grid_data neighbors: 8  {
  ***********************************************/
 experiment demo type: gui {
 	parameter 'Show slopes' var: show_slopes   category: "Preferences";
+	parameter 'Trail size' var: nb_last_positions min:0 max:100  category: "Preferences";
 	output synchronized: true{
 		display "carte" type: opengl {
 			grid parcelle   elevation:grid_value  	grayscale:true triangulation: true refresh: false;
