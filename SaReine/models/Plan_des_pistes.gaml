@@ -15,6 +15,7 @@ model Avalanche
  ***********************************************/
 
 global {
+	bool show_slopes <- true;
 	
 	//données SIG
 	file grid_data <- grid_file("../includes/Alpes250.asc");
@@ -24,6 +25,7 @@ global {
 	float offset;
 	graph slopes_graph;
 	graph aerial_graph;
+	
 	
 	graph ski_domain;
 	
@@ -82,6 +84,11 @@ global {
 					create slopes {
 						self.type <- "link";
 						shape <- polyline(reverse(myself.shape.points));
+						visible <- false;
+						segment <- {shape.points[1].x-shape.points[0].x,shape.points[1].y-shape.points[0].y,shape.points[1].z-shape.points[0].z};
+						segment_length <-norm(segment);
+						angleTriangle <- acos(segment.x/segment_length);
+					 	angleTriangle <- segment.y<0 ? - angleTriangle : angleTriangle;
 					}
 				}
 			}
@@ -89,10 +96,11 @@ global {
 				if (first(shape.points) in (aerial_ways collect first(each.shape.points))) or (last(shape.points) in (aerial_ways collect last(each.shape.points))){
 					shape <- polyline(reverse(shape.points));
 				}
-			}
-					
+			}		
 			segment <- {shape.points[1].x-shape.points[0].x,shape.points[1].y-shape.points[0].y,shape.points[1].z-shape.points[0].z};
 			segment_length <-norm(segment);
+			angleTriangle <- acos(segment.x/segment_length);
+		 	angleTriangle <- segment.y<0 ? - angleTriangle : angleTriangle;
 		}
 		
 		
@@ -128,7 +136,7 @@ species graph_debug{
 	list<point> mergeable;
 	
 	action test_graph{
-		write "testin graph";
+		write "testing graph...";
 		list<agent> edges <-union(slopes, aerial_ways);
 		// testing slopes geometries
 		ask edges{
@@ -194,21 +202,22 @@ species slopes{
 	float segment_length;
 	string type;
 	string sens;
-	//bool tunnel;
+	bool visible <- true;
 	rgb color <- #brown;
+	float angleTriangle;
 	
 	aspect base{
-		if type = "tunnel"{
-			draw cube(20#m) at: first(shape.points) color: #black;
-			draw cube(20#m) at:last(shape.points) color: #black;
-		}else{
-			draw shape color: color;
-		}
-		
-		
-			float angleTriangle <- acos(segment.x/segment_length);
-		 	angleTriangle <- segment.y<0 ? - angleTriangle : angleTriangle;
+		if show_slopes{
+			if visible{
+				if type = "tunnel"{
+					draw cube(20#m) at: first(shape.points) color: rgb(47,47,47) rotate: 90+angleTriangle;
+					draw cube(20#m) at:last(shape.points) color: rgb(47,47,47) rotate: 90+angleTriangle;
+				}else{
+					draw shape color: color;
+				}
+			}		
 			draw triangle(10) at:  first(shape.points)+ segment*0.5 rotate: 90+angleTriangle color: #blue;
+		}
 	}
 }
 
@@ -222,24 +231,14 @@ species aerial_ways{
 	
 	aspect base{
 		draw shape color:#black width:3;
-		
-		//loop i from: 0 to: segments_number-1{
-		 	 		
-// --------		pour afficher des petits triangles pour indiquer le sens de circulation sur chaque route 
-	
-
-		 			float angleTriangle <- acos(segment.x/segment_length);
-		 			angleTriangle <- segment.y<0 ? - angleTriangle : angleTriangle;
-//					draw triangle(10) at:  first(shape.points)+ {0.5*segment.x,0.5*segment.y,shape.} rotate: 90+angleTriangle color: #black;
-					draw triangle(40) at:  first(shape.points)+ segment*0.5 rotate: 90+angleTriangle color: #black;
-//		 		}
-	//	}
-		
+		 	float angleTriangle <- acos(segment.x/segment_length);
+		 	angleTriangle <- segment.y<0 ? - angleTriangle : angleTriangle;
+			draw triangle(40) at:  first(shape.points)+ segment*0.5 rotate: 90+angleTriangle color: #black;
 	}
 }
 
 species people skills:[moving]{
-	
+	list<point> last_positions;
 	bool ski<-true;
 	
 	reflex move{
@@ -255,10 +254,10 @@ species people skills:[moving]{
 	
 	aspect base{
 		if current_edge != nil and species(current_edge) = slopes{
-			draw circle(50#m) color:#black;
+			draw triangle(50#m) color:#black rotate: heading+90;
 		}
 		else{
-			draw circle(50#m) color:#red;
+			draw triangle(50#m) color:#red rotate: heading+90;
 		}
 //		draw circle(50#m) color:ski?#black:#red;
 	}
@@ -295,13 +294,14 @@ grid parcelle file: grid_data neighbors: 8  {
  *                  Expérience               * 
  ***********************************************/
 experiment demo type: gui {
+	parameter 'Show slopes' var: show_slopes   category: "Preferences";
 	output synchronized: true{
 		display "carte" type: opengl {
 			grid parcelle   elevation:grid_value  	grayscale:true triangulation: true refresh: false;
 			species slopes aspect:base position:{0,0,0.0};
 			species aerial_ways aspect:base position:{0,0,0.0};
-		//	species people aspect:base;
-			species graph_debug aspect: base;
+			species people aspect:base;
+		//	species graph_debug aspect: base;
 		}
 			
 
