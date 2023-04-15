@@ -31,6 +31,42 @@ global {
 	graph ski_domain;
 	
 	graph_debug debugger;
+	
+	
+	map<string, map<string, list<float>>> speed_range <-[
+		"1*"::["verte"::[1.0,3.0],"bleue"::[1.0,2.2],"rouge"::[1.0,2.0],"noire"::[0.3,0.9],
+					"freeride"::[0.3,0.7],"link"::[1.0,2.0],"acces"::[1.0,2.0],"chemin"::[1.0,2.0]],
+		"2*"::["verte"::[1.0,2.0],"bleue"::[1.0,4.0],"rouge"::[1.0,3.0],"noire"::[0.5,1.4],
+					"freeride"::[0.5,1.0],"link"::[1.0,2.0],"acces"::[1.0,2.0],"chemin"::[2.0,3.0]],
+		"3*"::["verte"::[4.0,7.0],"bleue"::[5,8.0],"rouge"::[4.5,8.0],"noire"::[1.5,4.0],
+					"freeride"::[1.5,2.5],"link"::[1.0,2.0],"acces"::[1.0,2.0],"chemin"::[3.0,5.0]],
+		"chamois"::["verte"::[6.0,11.0],"bleue"::[6.0,11.0],"rouge"::[6.0,10.0],"noire"::[5,9.0],
+					"freeride"::[5,9],"link"::[1.0,2.0],"acces"::[1.0,2.0],"chemin"::[3.0,5.0]]		
+		];
+	
+		map<string, map<string, list<float>>> turn_speed_range <-[
+		"1*"::["verte"::[1.0,3.0],"bleue"::[1.0,2.2],"rouge"::[1.0,2.0],"noire"::[0.5,1.0],
+					"freeride"::[0.3,0.7],"link"::[1.0,2.0],"acces"::[1.0,2.0],"chemin"::[1.0,2.0]],
+		"2*"::["verte"::[1.0,2.0],"bleue"::[2.0,5.0],"rouge"::[1.0,3.0],"noire"::[0.8,2.3],
+					"freeride"::[0.5,1.0],"link"::[1.0,2.0],"acces"::[1.0,2.0],"chemin"::[2.0,3.0]],
+		"3*"::["verte"::[1.5,3],"bleue"::[3,4],"rouge"::[4.5,8.0],"noire"::[1,3],
+					"freeride"::[1.5,2.5],"link"::[1.0,2.0],"acces"::[1.0,2.0],"chemin"::[3.0,5.0]],
+		"chamois"::["verte"::[1,2],"bleue"::[1,2],"rouge"::[3,6],"noire"::[5,9],
+					"freeride"::[5,9],"link"::[1.0,2.0],"acces"::[1.0,2.0],"chemin"::[3.0,5.0]]		
+		];
+	
+	
+		
+		map<string, map<string, list<float>>> amplitude_range <-[
+		"1*"::["verte"::[40,70],"bleue"::[40,70],"rouge"::[40,70],"noire"::[80,120],
+					"freeride"::[50,90],"link"::[4,10],"acces"::[3,7],"chemin"::[4,10]],
+		"2*"::["verte"::[25,60],"bleue"::[80,90],"rouge"::[20,45],"noire"::[75,90],
+					"freeride"::[50,90],"link"::[4,10],"acces"::[3,7],"chemin"::[4,10]],
+		"3*"::["verte"::[10,30],"bleue"::[80,90],"rouge"::[20,45],"noire"::[60,85],
+					"freeride"::[50,90],"link"::[4,10],"acces"::[3,7],"chemin"::[4,10]],
+		"chamois"::["verte"::[5,12],"bleue"::[10,20],"rouge"::[20,45],"noire"::[20,45],
+					"freeride"::[40,60],"link"::[4,10],"acces"::[3,7],"chemin"::[4,10]]		
+		];
 
 	init {
 		create aerial_ways from:shape_file_aerial with:[two_ways:bool(get("two_ways"))]{
@@ -50,7 +86,8 @@ global {
 			}
 		}
 		
-		create slopes from:shape_file_slopes with:[type::string(get("type")), name::string(get("name")), sens::string(get("sens"))] {
+		create slopes from:shape_file_slopes with:[type::string(get("type")), name::string(get("name")), 
+			sens::string(get("sens")),special::string(get("special"))] {
 			switch type{
 				match "noire"{
 					color <- #black;
@@ -65,6 +102,9 @@ global {
 					color <- rgb(16,175,35);
 				}
 				match "freeride"{
+					color <- #grey;
+				}
+				match "bordercross"{
 					color <- #grey;
 				}
 			
@@ -82,7 +122,8 @@ global {
 				}
 				match "plat"{
 					create slopes {
-						self.type <- "link";
+						self.type <- myself.type;
+						self.special <- myself.special;
 						shape <- polyline(reverse(myself.shape.points));
 						visible <- false;
 					}
@@ -210,11 +251,12 @@ species slopes parent: generic_edge{
 	string type;
 	string sens;
 	rgb color <- #brown;
+	string special;
 	
 	aspect base{
 		if show_slopes{
 			if visible{
-				if type = "tunnel"{
+				if special = "tunnel"{
 					draw cube(20#m) at: first(shape.points) color: rgb(47,47,47) rotate: 90+angleTriangle;
 					draw cube(20#m) at:last(shape.points) color: rgb(47,47,47) rotate: 90+angleTriangle;
 				}else{
@@ -244,15 +286,48 @@ species people skills:[moving]{
 	list<point> last_positions;
 	int delay <- rnd(359);
 	float turn_speed <- rnd(1.0,10.0);
-	float amplitude <- 60#m;
+	float amplitude <- 60.0;
+	float angle_amp <- 60.0;
 	point shifted_location;
-	float base_speed <- rnd(2.0,9.0);
+	generic_edge last_edge <- nil;
+	string level <- rnd_choice(["1*"::0.2,"2*"::0.3,"3*"::0.3,"chamois"::0.2]);
+	rgb color <- #black;
+	int slidding<-0;
+	
+	string state <- "ski";
+	
+	init{
+		switch level{
+			match "1*" {color <- #green;}
+			match "2*" {color <- #blue;slidding <- 80;}
+			match "3*" {color <- #red;
+				slidding <- 60;
+			}
+			match "4*" {color <- #black;}
+		}
+	}
+	
 	
 	reflex move{
-		if current_edge != nil and species(current_edge) = aerial_ways{
-			speed <- 3.0;
+		if current_edge != nil and current_edge != last_edge{
+			if species(current_edge) = aerial_ways{
+				speed <- 3.0;
+				state <- "climbe";
+			}else{
+				//write slopes(current_edge).special;
+				string ty <- (slopes(current_edge).special != "normal")?"chemin":slopes(current_edge).type;
+	//			write ""+level+" "+ty;	
+				speed <- rnd(first(speed_range[level][ty]),last(speed_range[level][ty]));
+				turn_speed <- rnd(first(turn_speed_range[level][ty]),last(turn_speed_range[level][ty]));
+				amplitude <- rnd(first(amplitude_range[level][ty]),last(amplitude_range[level][ty]));
+	//			write "L "+level+" "+ty+" amplitude "+amplitude+" in "+amplitude_range[level][ty];
+			//	write "L: "+level+" "+ty" speed "+speed+" in "+speed_range[level][ty];
+
+				state <- "ski";
+			} 
+			last_edge <- generic_edge(current_edge);
 		}else{
-			speed <- base_speed;
+
 		}
 		
 		do wander on:ski_domain ;
@@ -263,12 +338,12 @@ species people skills:[moving]{
 	
 	aspect base{
 		if current_edge != nil and species(current_edge) = slopes{
-			draw rectangle(15#m,40#m) color: #black at: shifted_location rotate: heading+90+60*cos(90+turn_speed*cycle+delay);
+			draw rectangle(15#m,40#m) color: color at: shifted_location rotate: heading+90+angle_amp*cos(90+turn_speed*cycle+delay+slidding);
 			draw polyline(last_positions) color: #grey;
 			//draw polyline(last_positions) color: slopes(current_edge).color;
 		}
 		else{
-			draw rectangle(15#m,40#m) color:#black rotate: heading+90;
+			draw rectangle(15#m,40#m) color:color rotate: heading+90;
 		}
 	}
 }
