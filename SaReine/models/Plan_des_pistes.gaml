@@ -290,7 +290,7 @@ experiment demo type: gui {
 			grid parcelle   elevation:grid_value  	grayscale:true triangulation: true refresh: false;
 			species slopes aspect:base position:{0,0,0.0};
 			species aerial_ways aspect:base position:{0,0,0.0};
-		//	species people aspect:base;
+			species people aspect:base;
 			species graph_debug aspect: base;
 		}
 			
