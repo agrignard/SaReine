@@ -16,7 +16,8 @@ model Avalanche
 
 global {
 	bool show_slopes <- true;
-	int nb_last_positions <- 50;
+	bool show_triangles <- false;
+	int nb_last_positions <- 70;
 	
 	//données SIG
 	file grid_data <- grid_file("../includes/Alpes250.asc");
@@ -67,6 +68,19 @@ global {
 		"chamois"::["verte"::[5,12],"bleue"::[10,20],"rouge"::[20,45],"noire"::[20,45],
 					"freeride"::[40,60],"link"::[4,10],"acces"::[3,7],"chemin"::[4,10]]		
 		];
+		
+		
+		map<string, map<string, int>> slidding_coeff <-[
+		"1*"::["verte"::0,"bleue"::40,"rouge"::90,"noire"::90,
+					"freeride"::0,"link"::0,"acces"::0,"chemin"::0],
+		"2*"::["verte"::0,"bleue"::0,"rouge"::40,"noire"::90,
+					"freeride"::0,"link"::0,"acces"::0,"chemin"::0],
+		"3*"::["verte"::0,"bleue"::0,"rouge"::30,"noire"::60,
+					"freeride"::0,"link"::0,"acces"::0,"chemin"::0],		
+		"chamois"::["verte"::0,"bleue"::0,"rouge"::0,"noire"::10,
+					"freeride"::0,"link"::0,"acces"::0,"chemin"::0]
+		];
+		
 
 	init {
 		create aerial_ways from:shape_file_aerial with:[two_ways:bool(get("two_ways"))]{
@@ -219,11 +233,25 @@ species graph_debug{
 		loop v over: (end_vertices-dead_end-unreachable){
 			list<slopes> slopes_with_v <- slopes where (v in [first(each.shape.points),last(each.shape.points)]);
 			list<aerial_ways> a_with_v <- aerial_ways where (v in [first(each.shape.points),last(each.shape.points)]);
-			if (length(slopes_with_v)+length(a_with_v)<3) and !(length(slopes_with_v)=1 and length(a_with_v)=1) {
-		//		write "Vertice "+v+" is mergeable.";
-				mergeable <- mergeable + v;
-			}	
+			if (length(slopes_with_v)+length(a_with_v)<3) {
+				bool not_merge <-(
+									length(slopes_with_v)=1 and length(a_with_v)=1
+									) or 
+									(length(slopes_with_v)=2 and (
+										first(slopes_with_v).special != last(slopes_with_v).special or 
+										first(slopes_with_v).type != last(slopes_with_v).type
+									)
+								 );
+				if !not_merge{
+						mergeable <- mergeable + v;
+				} 
+			}
 		}
+//			and 
+//					(!(length(slopes_with_v)=1 and length(a_with_v)=1) or first(slopes_with_v).special != first(a_with_v).special){
+		//		write "Vertice "+v+" is mergeable.";
+//				mergeable <- mergeable + v;
+
 		list<point> truc <- (slopes where (each.type = "tunnel")) accumulate ([first(each.shape.points), last(each.shape.points)]);
 		mergeable <- mergeable - (slopes where (each.type = "tunnel")) accumulate ([first(each.shape.points), last(each.shape.points)]);
 		write "There are "+length(mergeable)+" mergeable points.";
@@ -263,7 +291,7 @@ species slopes parent: generic_edge{
 					draw shape color: color;
 				}
 			}		
-			draw triangle(10) at:  first(shape.points)+ segment*0.5 rotate: 90+angleTriangle color: #blue;
+			if show_triangles {draw triangle(10) at:  first(shape.points)+ segment*0.5 rotate: 90+angleTriangle color: color;}
 		}
 	}
 }
@@ -278,13 +306,13 @@ species aerial_ways parent: generic_edge{
 		if visible{
 			draw shape color:#black width:2;
 		}
-		draw triangle(40) at:  first(shape.points)+ segment*0.5 rotate: 90+angleTriangle color: #black;
+		if show_triangles {draw triangle(40) at:  first(shape.points)+ segment*0.5 rotate: 90+angleTriangle color: #black;}
 	}
 }
 
 species people skills:[moving]{
 	list<point> last_positions;
-	int delay <- rnd(359);
+//	int delay <- rnd(359);
 	float turn_speed <- rnd(1.0,10.0);
 	float amplitude <- 60.0;
 	float angle_amp <- 60.0;
@@ -292,18 +320,20 @@ species people skills:[moving]{
 	generic_edge last_edge <- nil;
 	string level <- rnd_choice(["1*"::0.2,"2*"::0.3,"3*"::0.3,"chamois"::0.2]);
 	rgb color <- #black;
-	int slidding<-0;
+	float slidding<-0.0;
+	float angle <- float(rnd(359));
+	//float speed2;
 	
 	string state <- "ski";
 	
 	init{
 		switch level{
 			match "1*" {color <- #green;}
-			match "2*" {color <- #blue;slidding <- 80;}
+			match "2*" {color <- #blue;}//slidding <- 80;}
 			match "3*" {color <- #red;
-				slidding <- 60;
+		//		slidding <- 60;
 			}
-			match "4*" {color <- #black;}
+			match "chamoix" {color <- #black;}
 		}
 	}
 	
@@ -312,37 +342,45 @@ species people skills:[moving]{
 		if current_edge != nil and current_edge != last_edge{
 			if species(current_edge) = aerial_ways{
 				speed <- 3.0;
-				state <- "climbe";
+				state <- "climb";
 			}else{
 				//write slopes(current_edge).special;
 				string ty <- (slopes(current_edge).special != "normal")?"chemin":slopes(current_edge).type;
-	//			write ""+level+" "+ty;	
+			//	write ""+level+" "+ty;	
 				speed <- rnd(first(speed_range[level][ty]),last(speed_range[level][ty]));
 				turn_speed <- rnd(first(turn_speed_range[level][ty]),last(turn_speed_range[level][ty]));
 				amplitude <- rnd(first(amplitude_range[level][ty]),last(amplitude_range[level][ty]));
+				slidding <- (slidding_coeff[level][ty])*rnd(0.7,1.1);
 	//			write "L "+level+" "+ty+" amplitude "+amplitude+" in "+amplitude_range[level][ty];
 			//	write "L: "+level+" "+ty" speed "+speed+" in "+speed_range[level][ty];
 
 				state <- "ski";
 			} 
 			last_edge <- generic_edge(current_edge);
-		}else{
-
 		}
+		//speed <- speed;// * (1+abs(sin(angle)))/2;
 		
 		do wander on:ski_domain ;
-		shifted_location <- location + ({0,1,0} rotated_by (heading::{0,0,1}))*amplitude*cos(turn_speed*cycle+delay);
+		angle <- angle + turn_speed;
+		shifted_location <- location + ({0,1,0} rotated_by (heading::{0,0,1}))*amplitude*cos(angle);
 		last_positions <- last(nb_last_positions-1,last_positions)+shifted_location;
 	}
 	
 	
 	aspect base{
 		if current_edge != nil and species(current_edge) = slopes{
-			draw rectangle(15#m,40#m) color: color at: shifted_location rotate: heading+90+angle_amp*cos(90+turn_speed*cycle+delay+slidding);
+			shape <- (rectangle(15#m,40#m) rotated_by (heading+90+angle_amp*cos(90+angle+slidding)));
+		//	geometry truc <- rectangle(15#m,40#m) rotated_by 234.2;
+	//		draw rectangle(15#m,40#m) color: color at: shifted_location 
+	//			rotate: heading+90+angle_amp*cos(90+turn_speed*cycle+slidding);
+//	shape <- truc;
+			draw shape color: color at: shifted_location;
 			draw polyline(last_positions) color: #grey;
 			//draw polyline(last_positions) color: slopes(current_edge).color;
 		}
 		else{
+			shape <- rectangle(15#m,40#m) rotated_by (heading+90);
+			draw shape at: location color:color;
 			draw rectangle(15#m,40#m) color:color rotate: heading+90;
 		}
 	}
@@ -380,6 +418,7 @@ grid parcelle file: grid_data neighbors: 8  frequency:0{
  ***********************************************/
 experiment demo type: gui {
 	parameter 'Show slopes' var: show_slopes   category: "Preferences";
+	parameter 'Show slopes directions' var: show_triangles   category: "Preferences";
 	parameter 'Trail size' var: nb_last_positions min:0 max:200  category: "Preferences";
 	output synchronized: true{
 		display "carte" type: opengl {
