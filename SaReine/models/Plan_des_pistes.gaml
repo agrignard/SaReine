@@ -16,11 +16,13 @@ model Avalanche
 
 global {
 	bool show_slopes <- true;
-	bool show_triangles <- false;
+	bool show_triangles <- true;
 	int nb_last_positions <- 70;
+	float trail_smoothness <- 0.2 min:0.01 max: 1.0;
 	
 	//données SIG
-	file grid_data <- grid_file("../includes/Alpes250.asc");
+	string grid_data_file <- "../includes/Alpes50.asc";
+	file grid_data <- grid_file(grid_data_file);
 	geometry shape <- envelope(grid_data);	
 	file shape_file_slopes <- shape_file("../includes/shp/ski_slopes.shp");
 	file shape_file_aerial <- shape_file("../includes/shp/aerial_ways.shp");
@@ -100,8 +102,36 @@ global {
 			}
 		}
 		
+		string sens_attribute; 
+		write "MNT: "+grid_data_file+" loaded.";		
+		string resolution <- first(regex_matches(grid_data_file,'\\d+'));
+		if ("sens "+resolution) in first(shape_file_slopes).attributes.keys{
+			write "Loading attributes at resolution "+resolution;
+			sens_attribute <- "sens "+resolution;
+		}else{
+			write "*****************************************************************************\nWarning: shapefile not optimized for this resolution MNT: "+
+			first(regex_matches(grid_data_file,'Alpes.*'));
+			write"The direction of the slopes may be incorrect. Add a new 'sens' field matching \nthis resolution and use the debug interface to locate inverted ski slopes.";
+			write "*****************************************************************************";
+			sens_attribute <- "sens 250";
+		}
+	
+//		switch first(regex_matches(grid_data_file,'\\d+')){
+//			match '250'{sens_attribute <- "sens LD";}
+//			match '50'{sens_attribute <- "sens HD";}
+//			default{
+//				write "*****************************************************************************\nWarning: shapefile not optimized for this resolution MNT: "+
+//					first(regex_matches(grid_data_file,'Alpes.*'));
+//				write"The direction of the slopes may be incorrect. Add a new 'sens' field matching \nthis resolution and use the debug interface to locate inverted ski slopes.";
+//				write "*****************************************************************************";
+//				sens_attribute <- "sens LD";
+//			}
+//		} 
+		
+		
+		
 		create slopes from:shape_file_slopes with:[type::string(get("type")), name::string(get("name")), 
-			sens::string(get("sens")),special::string(get("special"))] {
+			sens::string(get(sens_attribute)),special::string(get("special"))] {
 			switch type{
 				match "noire"{
 					color <- #black;
@@ -156,7 +186,8 @@ global {
 		
 		
 		create people number:400{
-			location<-any_location_in(one_of(union(slopes, aerial_ways)));
+			//location<-any_location_in(one_of(union(slopes, aerial_ways)));
+			location<-any_location_in(one_of(slopes));
 			last_positions <- list_with(nb_last_positions,location);
 		}
 		
@@ -176,20 +207,6 @@ global {
 
 //////////////////////////////////////////
 
-
-species generic_edge{
-	point segment;
-	float segment_length;
-	float angleTriangle;
-	bool visible <- true;
-	
-	action compute_segment{
-		segment <- {shape.points[1].x-shape.points[0].x,shape.points[1].y-shape.points[0].y,shape.points[1].z-shape.points[0].z};
-		segment_length <-norm(segment);
-		angleTriangle <- acos(segment.x/segment_length);
-		angleTriangle <- segment.y<0 ? - angleTriangle : angleTriangle;
-	}
-}
 
 species graph_debug{
 	// for graph test
@@ -236,10 +253,10 @@ species graph_debug{
 			if (length(slopes_with_v)+length(a_with_v)<3) {
 				bool not_merge <-(
 									length(slopes_with_v)=1 and length(a_with_v)=1
-									) or 
-									(length(slopes_with_v)=2 and (
-										first(slopes_with_v).special != last(slopes_with_v).special or 
-										first(slopes_with_v).type != last(slopes_with_v).type
+									) or ( 
+									length(slopes_with_v)=2 and (
+										(first(slopes_with_v).special != last(slopes_with_v).special) or 
+										(first(slopes_with_v).type != last(slopes_with_v).type)
 									)
 								 );
 				if !not_merge{
@@ -247,13 +264,6 @@ species graph_debug{
 				} 
 			}
 		}
-//			and 
-//					(!(length(slopes_with_v)=1 and length(a_with_v)=1) or first(slopes_with_v).special != first(a_with_v).special){
-		//		write "Vertice "+v+" is mergeable.";
-//				mergeable <- mergeable + v;
-
-		list<point> truc <- (slopes where (each.type = "tunnel")) accumulate ([first(each.shape.points), last(each.shape.points)]);
-		mergeable <- mergeable - (slopes where (each.type = "tunnel")) accumulate ([first(each.shape.points), last(each.shape.points)]);
 		write "There are "+length(mergeable)+" mergeable points.";
 	}
 	
@@ -270,7 +280,33 @@ species graph_debug{
 	
 }
 
+////////////////////////////////////
 
+
+species generic_edge{
+	float angleTriangle;
+	point triangle_position;
+	bool visible <- true;
+	
+	// to draw a triangle showing the direction at the middle of the polyline
+	action compute_segment{
+		float l <- shape.perimeter/2;
+		int p <- 0;
+		point segment;
+		float segment_length;
+		segment <- {shape.points[1].x-shape.points[0].x,shape.points[1].y-shape.points[0].y,shape.points[1].z-shape.points[0].z};
+		segment_length <-norm(segment);
+		loop while: segment_length < l {
+			l <- l - segment_length;
+			p <- p + 1;
+			segment <- {shape.points[p+1].x-shape.points[p].x,shape.points[p+1].y-shape.points[p].y,shape.points[p+1].z-shape.points[p].z};
+			segment_length <-norm(segment);	
+		}
+		angleTriangle <- acos(segment.x/segment_length);
+		angleTriangle <- segment.y<0 ? - angleTriangle : angleTriangle;
+		triangle_position <- shape.points[p]+segment*l/segment_length;
+	}
+}
 
 ////////////////////////////////////
 
@@ -291,7 +327,8 @@ species slopes parent: generic_edge{
 					draw shape color: color;
 				}
 			}		
-			if show_triangles {draw triangle(10) at:  first(shape.points)+ segment*0.5 rotate: 90+angleTriangle color: color;}
+			if show_triangles {draw triangle(10) at:  triangle_position rotate: 90+angleTriangle  color: color;}
+		//	if show_triangles {draw triangle(10) at:  triangle_position color: color;}
 		}
 	}
 }
@@ -306,7 +343,7 @@ species aerial_ways parent: generic_edge{
 		if visible{
 			draw shape color:#black width:2;
 		}
-		if show_triangles {draw triangle(40) at:  first(shape.points)+ segment*0.5 rotate: 90+angleTriangle color: #black;}
+		if show_triangles {draw triangle(40) at: triangle_position rotate: 90+angleTriangle color: #black;}
 	}
 }
 
@@ -363,6 +400,7 @@ species people skills:[moving]{
 		do wander on:ski_domain ;
 		angle <- angle + turn_speed;
 		shifted_location <- location + ({0,1,0} rotated_by (heading::{0,0,1}))*amplitude*cos(angle);
+		shifted_location <- last(last_positions) + (shifted_location - last(last_positions))*trail_smoothness;
 		last_positions <- last(nb_last_positions-1,last_positions)+shifted_location;
 	}
 	
@@ -370,10 +408,6 @@ species people skills:[moving]{
 	aspect base{
 		if current_edge != nil and species(current_edge) = slopes{
 			shape <- (rectangle(15#m,40#m) rotated_by (heading+90+angle_amp*cos(90+angle+slidding)));
-		//	geometry truc <- rectangle(15#m,40#m) rotated_by 234.2;
-	//		draw rectangle(15#m,40#m) color: color at: shifted_location 
-	//			rotate: heading+90+angle_amp*cos(90+turn_speed*cycle+slidding);
-//	shape <- truc;
 			draw shape color: color at: shifted_location;
 			draw polyline(last_positions) color: #grey;
 			//draw polyline(last_positions) color: slopes(current_edge).color;
@@ -420,6 +454,7 @@ experiment demo type: gui {
 	parameter 'Show slopes' var: show_slopes   category: "Preferences";
 	parameter 'Show slopes directions' var: show_triangles   category: "Preferences";
 	parameter 'Trail size' var: nb_last_positions min:0 max:200  category: "Preferences";
+	parameter 'Trail smoothness' var: trail_smoothness min:0.01 max:1.0  category: "Preferences";
 	output synchronized: true{
 		display "carte" type: opengl {
 			grid parcelle   elevation:grid_value  	grayscale:true triangulation: true refresh: false;
