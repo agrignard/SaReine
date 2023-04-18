@@ -33,8 +33,39 @@ global {
 	
 	graph ski_domain;
 	
-	graph_debug debugger;
+	debug debugger;
 	
+	list<string> levels <- ["1*","2*","3*","chamois"];
+	
+	
+	map<string, map<string,float>> init_proba_wander <- [
+		"1*"::["verte"::100.0,"bleue"::40.0,"rouge"::20.0,"noire"::5.0,
+					"freeride"::1.0,"link"::100.0,"acces"::100.0,"liaison"::100.0],
+		"2*"::["verte"::60.0,"bleue"::100.0,"rouge"::40.0,"noire"::15.0,
+					"freeride"::1.0,"link"::100.0,"acces"::100.0,"liaison"::100],
+		"3*"::["verte"::15.0,"bleue"::60.0,"rouge"::100.0,"noire"::50.0,
+					"freeride"::5.0,"link"::100.0,"acces"::100.0,"liaison"::100.0],
+		"chamois"::["verte"::5.0,"bleue"::25.0,"rouge"::60.0,"noire"::100.0,
+					"freeride"::1.0,"link"::100.0,"acces"::100.0,"liaison"::100.0]
+	];		
+	
+	
+//	map<string, map<string,float>> init_proba_wander <- [
+//		"1*"::["verte"::100.0,"bleue"::1,"rouge"::1,"noire"::1,
+//					"freeride"::1.0,"link"::1,"acces"::1,"liaison"::1],
+//		"2*"::["verte"::100,"bleue"::100.0,"rouge"::1,"noire"::1,
+//					"freeride"::1.0,"link"::1,"acces"::1,"liaison"::1],
+//		"3*"::["verte"::1,"bleue"::1,"rouge"::100.0,"noire"::1,
+//					"freeride"::1,"link"::1,"acces"::1,"liaison"::1],
+//		"chamois"::["verte"::1,"bleue"::1,"rouge"::1,"noire"::100.0,
+//					"freeride"::1.0,"link"::100.0,"acces"::100.0,"liaison"::100.0]
+//	];	
+	
+	
+
+	
+	map<string, map<generic_edge,float>> proba_wander;
+//	map<generic_edge,float> proba_wander;
 	
 	map<string, map<string, list<float>>> speed_range <-[
 		"1*"::["verte"::[1.0,3.0],"bleue"::[1.0,2.2],"rouge"::[1.0,2.0],"noire"::[0.3,0.9],
@@ -95,7 +126,7 @@ global {
 		
 
 	init {
-		create aerial_ways from:shape_file_aerial with:[two_ways:bool(get("two_ways"))]{
+		create aerial_ways from:shape_file_aerial with:[name::string(get("name")),type::string(get("type")), two_ways::bool(get("two_ways"))]{
 			loop i from: 0 to:length(shape.points)-1{	
 				float val <- parcelle(shape.points[i]).grid_value;
 				shape <- set_z(shape,i,val+50);
@@ -108,6 +139,8 @@ global {
 				create aerial_ways {
 					shape <- polyline(reverse(myself.shape.points));
 					visible <- false;
+					name <- myself.name;
+					type <- myself.type;
 				}
 			}
 		}
@@ -126,19 +159,6 @@ global {
 			sens_attribute <- "sens 250";
 		}
 	
-//		switch first(regex_matches(grid_data_file,'\\d+')){
-//			match '250'{sens_attribute <- "sens LD";}
-//			match '50'{sens_attribute <- "sens HD";}
-//			default{
-//				write "*****************************************************************************\nWarning: shapefile not optimized for this resolution MNT: "+
-//					first(regex_matches(grid_data_file,'Alpes.*'));
-//				write"The direction of the slopes may be incorrect. Add a new 'sens' field matching \nthis resolution and use the debug interface to locate inverted ski slopes.";
-//				write "*****************************************************************************";
-//				sens_attribute <- "sens LD";
-//			}
-//		} 
-		
-		
 		
 		create slopes from:shape_file_slopes with:[type::string(get("type")), name::string(get("name")), 
 			sens::string(get(sens_attribute)),special::string(get("special"))] {
@@ -161,7 +181,6 @@ global {
 				match "bordercross"{
 					color <- #grey;
 				}
-			
 			}
 			loop i from: 0 to:length(shape.points)-1{
 				float val <- parcelle(shape.points[i]).grid_value;
@@ -195,7 +214,14 @@ global {
 		}
 		
 		
-		create people number:400{
+		map<generic_edge,float> tmp;
+		loop l over: levels{
+			tmp <- union(slopes,aerial_ways) as_map (each::float(init_proba_wander[l][each.type]));
+			put tmp at: l in: proba_wander;
+		}
+
+
+		create people number:800{
 			//location<-any_location_in(one_of(union(slopes, aerial_ways)));
 			location<-any_location_in(one_of(slopes));
 			last_positions <- [location];//list_with(nb_last_positions,location);
@@ -205,11 +231,14 @@ global {
 		aerial_graph <- directed(as_edge_graph(aerial_ways));
 		
 		ski_domain <- directed(as_edge_graph(union(slopes, aerial_ways)));
+
 		
-		create graph_debug{
+		create debug{
 			debugger <- self;
 		}
-		ask debugger {do test_graph;}
+		ask debugger {
+			do test_graph;
+		}
 		
 	}
 	
@@ -218,11 +247,12 @@ global {
 //////////////////////////////////////////
 
 
-species graph_debug{
+species debug{
 	// for graph test
 	list<point> dead_end;
 	list<point> unreachable;
 	list<point> mergeable;
+	
 	
 	action test_graph{
 		write "testing graph...";
@@ -294,6 +324,7 @@ species graph_debug{
 
 
 species generic_edge{
+	string type;
 	float angleTriangle;
 	point triangle_position;
 	bool visible <- true;
@@ -322,7 +353,6 @@ species generic_edge{
 
 
 species slopes parent: generic_edge{
-	string type;
 	string sens;
 	rgb color <- #brown;
 	string special;
@@ -410,9 +440,9 @@ species people skills:[moving] parallel: true{
 			last_edge <- generic_edge(current_edge);
 		}
 		angle <- angle + turn_speed;
-		speed <- speed2 * (1+cos(angle_amp*cos(90+angle)))/2;
+		speed <- speed2 * (1+cos(angle_amp*cos(90+angle)))/2;	
 		
-		do wander on:ski_domain ;
+		do wander on:ski_domain proba_edges: proba_wander[level];
 		
 		shifted_location <- location + ({0,1,0} rotated_by (heading::{0,0,1}))*amplitude*cos(angle);
 		shifted_location <- last(last_positions) + (shifted_location - last(last_positions))*trail_smoothness;
@@ -482,7 +512,7 @@ experiment demo type: gui {
 			species slopes aspect:base position:{0,0,0.0};
 			species aerial_ways aspect:base position:{0,0,0.0};
 			species people aspect:base;
-			species graph_debug aspect: base;
+			species debug aspect: base;
 		}
 			
 
