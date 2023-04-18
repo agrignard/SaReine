@@ -16,7 +16,7 @@ model Avalanche
 
 global {
 	bool show_slopes <- true;
-	bool show_triangles <- true;
+	bool show_triangles <- false;
 	int nb_last_positions <- 100;
 	float trail_smoothness <- 0.2 min:0.01 max: 1.0;
 	
@@ -378,6 +378,18 @@ species slopes parent: generic_edge{
 
 species aerial_ways parent: generic_edge{
 	bool two_ways;
+	list<people> waiting_line;
+	int delay <- 60;
+	int capacity <- 4;
+	float speed <- 3.0;
+	
+	init{
+		if name = "Pic Blanc"{
+			delay <- 200;
+			capacity <- 40;
+			speed <- 10.0;
+		}
+	}
 	
 	aspect base{
 		if visible{
@@ -385,6 +397,14 @@ species aerial_ways parent: generic_edge{
 		}
 		if show_triangles {draw triangle(40) at: triangle_position rotate: 90+angleTriangle color: #black;}
 	}
+	
+	reflex departure when: mod(cycle,delay) = 0{
+		ask first(capacity, waiting_line){
+			state <- "climb";
+		}
+		waiting_line <- waiting_line - first(capacity, waiting_line);
+	}
+	
 }
 
 species people skills:[moving] parallel: true{
@@ -416,33 +436,40 @@ species people skills:[moving] parallel: true{
 	
 	
 	reflex move{
+		// change parameters when entering a new edge
 		if current_edge != nil and current_edge != last_edge{
 			if species(current_edge) = aerial_ways{
-				speed2 <- 3.0;
-				state <- "climb";
+				//speed <- 3.0;
+				state <- "wait";
+				ask aerial_ways(current_edge){
+					waiting_line <+ myself;
+					myself.speed <- self.speed;
+				}
 			}else{
 				if species(last_edge) = aerial_ways{
 					last_positions <- [location];
-				}
-				//write slopes(current_edge).special;
+				} 
 				string ty <- (slopes(current_edge).special != "normal")?"chemin":slopes(current_edge).type;
-			//	write ""+level+" "+ty;	
 				speed2 <- rnd(first(speed_range[level][ty]),last(speed_range[level][ty]));
 				turn_speed <- rnd(first(turn_speed_range[level][ty]),last(turn_speed_range[level][ty]));
 				amplitude <- rnd(first(amplitude_range[level][ty]),last(amplitude_range[level][ty]));
 				slidding <- (slidding_coeff[level][ty])*rnd(0.7,1.1);
 				angle_amp <- float(angle_range[level][ty]);
-	//			write "L "+level+" "+ty+" amplitude "+amplitude+" in "+amplitude_range[level][ty];
-			//	write "L: "+level+" "+ty" speed "+speed+" in "+speed_range[level][ty];
-
 				state <- "ski";
 			} 
 			last_edge <- generic_edge(current_edge);
 		}
-		angle <- angle + turn_speed;
-		speed <- speed2 * (1+cos(angle_amp*cos(90+angle)))/2;	
 		
-		do wander on:ski_domain proba_edges: proba_wander[level];
+		// regular behavor;
+		angle <- angle + turn_speed;
+		if state = "ski"{
+			speed <- speed2 * (1+cos(angle_amp*cos(90+angle)))/2;	
+		}
+		
+		if state != "wait"{
+			do wander on:ski_domain proba_edges: proba_wander[level];
+		}
+		
 		
 		shifted_location <- location + ({0,1,0} rotated_by (heading::{0,0,1}))*amplitude*cos(angle);
 		shifted_location <- last(last_positions) + (shifted_location - last(last_positions))*trail_smoothness;
