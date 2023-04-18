@@ -30,6 +30,8 @@ global {
 	graph slopes_graph;
 	graph aerial_graph;
 	
+	point dims <- {4.5#m,12.0#m};
+	
 	
 	graph ski_domain;
 	
@@ -408,6 +410,7 @@ species aerial_ways parent: generic_edge{
 }
 
 species people skills:[moving] parallel: true{
+
 	list<point> last_positions <- [];
 //	int delay <- rnd(359);
 	float turn_speed <- rnd(1.0,10.0);
@@ -420,6 +423,7 @@ species people skills:[moving] parallel: true{
 	float slidding<-0.0;
 	float angle <- float(rnd(359));
 	float speed2;
+	point shift;
 	
 	string state <- "ski";
 	
@@ -470,9 +474,11 @@ species people skills:[moving] parallel: true{
 			do wander on:ski_domain proba_edges: proba_wander[level];
 		}
 		
-		
-		shifted_location <- location + ({0,1,0} rotated_by (heading::{0,0,1}))*amplitude*cos(angle);
-		shifted_location <- last(last_positions) + (shifted_location - last(last_positions))*trail_smoothness;
+//		shift <- ({0,1,0} rotated_by (heading::{0,0,1}))*amplitude*cos(angle);
+
+		shift <- shift + (({0,1,0} rotated_by (heading::{0,0,1}))*amplitude*cos(angle)-shift)*trail_smoothness;
+		shifted_location <- location + shift;
+		//shifted_location <- last(last_positions) + (shifted_location - last(last_positions))*trail_smoothness;
 		if species(current_edge) = aerial_ways{
 			last_positions <- [];
 		}else{
@@ -485,15 +491,15 @@ species people skills:[moving] parallel: true{
 	
 	aspect base{
 		if current_edge != nil and species(current_edge) = slopes{
-			shape <- (rectangle(15#m,40#m) rotated_by (heading+90+angle_amp*cos(90+angle+slidding)));
+			shape <- (rectangle(dims.x,dims.y) rotated_by (heading+90+angle_amp*cos(90+angle+slidding)));
 			draw shape color: color at: shifted_location;
 			draw polyline(last_positions) color: #grey;
 			//draw polyline(last_positions) color: slopes(current_edge).color;
 		}
 		else{
-			shape <- rectangle(15#m,40#m) rotated_by (heading+90);
+			shape <- rectangle(dims.x,dims.y) rotated_by (heading+90);
 			draw shape at: location color:color;
-			draw rectangle(15#m,40#m) color:color rotate: heading+90;
+			draw rectangle(dims.x,dims.y) color:color rotate: heading+90;
 		}
 	}
 }
