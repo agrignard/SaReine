@@ -21,7 +21,7 @@ global {
 	float trail_smoothness <- 0.2 min:0.01 max: 1.0;
 	
 	//données SIG
-	string grid_data_file <- "../includes/Alpes50.asc";
+	string grid_data_file <- "../includes/Alpes250.asc";
 	file grid_data <- grid_file(grid_data_file);
 	geometry shape <- envelope(grid_data);	
 	file shape_file_slopes <- shape_file("../includes/shp/ski_slopes.shp");
@@ -198,7 +198,7 @@ global {
 		create people number:400{
 			//location<-any_location_in(one_of(union(slopes, aerial_ways)));
 			location<-any_location_in(one_of(slopes));
-			last_positions <- list_with(nb_last_positions,location);
+			last_positions <- [location];//list_with(nb_last_positions,location);
 		}
 		
 		slopes_graph <-directed(as_edge_graph(slopes));
@@ -357,8 +357,8 @@ species aerial_ways parent: generic_edge{
 	}
 }
 
-species people skills:[moving]{
-	list<point> last_positions;
+species people skills:[moving] parallel: true{
+	list<point> last_positions <- [];
 //	int delay <- rnd(359);
 	float turn_speed <- rnd(1.0,10.0);
 	float amplitude <- 60.0;
@@ -416,7 +416,13 @@ species people skills:[moving]{
 		
 		shifted_location <- location + ({0,1,0} rotated_by (heading::{0,0,1}))*amplitude*cos(angle);
 		shifted_location <- last(last_positions) + (shifted_location - last(last_positions))*trail_smoothness;
-		last_positions <- last(nb_last_positions-1,last_positions)+shifted_location;
+		if species(current_edge) = aerial_ways{
+			last_positions <- [];
+		}else{
+			last_positions <- last(nb_last_positions-1,last_positions)+shifted_location;
+		}
+		
+		
 	}
 	
 	
