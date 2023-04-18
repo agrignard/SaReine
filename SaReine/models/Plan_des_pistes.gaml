@@ -17,7 +17,7 @@ model Avalanche
 global {
 	bool show_slopes <- true;
 	bool show_triangles <- true;
-	int nb_last_positions <- 70;
+	int nb_last_positions <- 100;
 	float trail_smoothness <- 0.2 min:0.01 max: 1.0;
 	
 	//données SIG
@@ -71,11 +71,21 @@ global {
 					"freeride"::[40,60],"link"::[4,10],"acces"::[3,7],"chemin"::[4,10]]		
 		];
 		
+		map<string, map<string, int>> angle_range <-[
+		"1*"::["verte"::60,"bleue"::70,"rouge"::90,"noire"::90,
+					"freeride"::60,"link"::0,"acces"::0,"chemin"::30],
+		"2*"::["verte"::60,"bleue"::60,"rouge"::60,"noire"::60,
+					"freeride"::60,"link"::0,"acces"::0,"chemin"::20],
+		"3*"::["verte"::60,"bleue"::60,"rouge"::60,"noire"::60,
+					"freeride"::60,"link"::60,"acces"::0,"chemin"::0],		
+		"chamois"::["verte"::60,"bleue"::60,"rouge"::60,"noire"::60,
+					"freeride"::0,"link"::0,"acces"::0,"chemin"::0]
+		];
 		
 		map<string, map<string, int>> slidding_coeff <-[
-		"1*"::["verte"::0,"bleue"::40,"rouge"::90,"noire"::90,
+		"1*"::["verte"::0,"bleue"::0,"rouge"::0,"noire"::0,
 					"freeride"::0,"link"::0,"acces"::0,"chemin"::0],
-		"2*"::["verte"::0,"bleue"::0,"rouge"::40,"noire"::90,
+		"2*"::["verte"::0,"bleue"::0,"rouge"::30,"noire"::10,
 					"freeride"::0,"link"::0,"acces"::0,"chemin"::0],
 		"3*"::["verte"::0,"bleue"::0,"rouge"::30,"noire"::60,
 					"freeride"::0,"link"::0,"acces"::0,"chemin"::0],		
@@ -359,7 +369,7 @@ species people skills:[moving]{
 	rgb color <- #black;
 	float slidding<-0.0;
 	float angle <- float(rnd(359));
-	//float speed2;
+	float speed2;
 	
 	string state <- "ski";
 	
@@ -378,16 +388,20 @@ species people skills:[moving]{
 	reflex move{
 		if current_edge != nil and current_edge != last_edge{
 			if species(current_edge) = aerial_ways{
-				speed <- 3.0;
+				speed2 <- 3.0;
 				state <- "climb";
 			}else{
+				if species(last_edge) = aerial_ways{
+					last_positions <- [location];
+				}
 				//write slopes(current_edge).special;
 				string ty <- (slopes(current_edge).special != "normal")?"chemin":slopes(current_edge).type;
 			//	write ""+level+" "+ty;	
-				speed <- rnd(first(speed_range[level][ty]),last(speed_range[level][ty]));
+				speed2 <- rnd(first(speed_range[level][ty]),last(speed_range[level][ty]));
 				turn_speed <- rnd(first(turn_speed_range[level][ty]),last(turn_speed_range[level][ty]));
 				amplitude <- rnd(first(amplitude_range[level][ty]),last(amplitude_range[level][ty]));
 				slidding <- (slidding_coeff[level][ty])*rnd(0.7,1.1);
+				angle_amp <- float(angle_range[level][ty]);
 	//			write "L "+level+" "+ty+" amplitude "+amplitude+" in "+amplitude_range[level][ty];
 			//	write "L: "+level+" "+ty" speed "+speed+" in "+speed_range[level][ty];
 
@@ -395,10 +409,11 @@ species people skills:[moving]{
 			} 
 			last_edge <- generic_edge(current_edge);
 		}
-		//speed <- speed;// * (1+abs(sin(angle)))/2;
+		angle <- angle + turn_speed;
+		speed <- speed2 * (1+cos(angle_amp*cos(90+angle)))/2;
 		
 		do wander on:ski_domain ;
-		angle <- angle + turn_speed;
+		
 		shifted_location <- location + ({0,1,0} rotated_by (heading::{0,0,1}))*amplitude*cos(angle);
 		shifted_location <- last(last_positions) + (shifted_location - last(last_positions))*trail_smoothness;
 		last_positions <- last(nb_last_positions-1,last_positions)+shifted_location;
