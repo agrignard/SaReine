@@ -31,7 +31,9 @@ global {
 	geometry shape <- envelope(grid_data);	
 	file shape_file_slopes <- shape_file("../includes/shp/ski_slopes.shp");
 	file shape_file_aerial <- shape_file("../includes/shp/aerial_ways.shp");
-	file shape_file_buildings <- shape_file("../includes/shp/buildings.shp");
+	file shape_file_buildings <- file("../includes/shp/building.shp");
+	file shape_file_roads <- file("../includes/shp/road.shp");
+
 	float offset;
 	graph slopes_graph;
 	graph aerial_graph;
@@ -251,6 +253,22 @@ global {
 		}
 		ask debugger {
 			do test_graph;
+		}
+		
+		create building from: shape_file_buildings with: [type::string(read ("NATURE"))] {
+			loop i from: 0 to:length(shape.points)-1{	
+				float val <- parcelle(shape.points[i]).grid_value;
+				shape <- set_z(shape,i,val+50);
+			}
+			if type="Industrial" {
+				color <- #blue ;
+			}
+		}
+		create road from: shape_file_roads {
+			loop i from: 0 to:length(shape.points)-1{	
+				float val <- parcelle(shape.points[i]).grid_value;
+				shape <- set_z(shape,i,val+50);
+			}
 		}
 		
 	}
@@ -529,6 +547,13 @@ species people skills:[moving] parallel: true{
 	}
 }
 
+species road  {
+	rgb color <- #black ;
+	aspect base {
+		draw shape color: color ;
+	}
+}
+
 /*******************Agent grille de parcelle (montagne)**************************** */
 grid parcelle file: grid_data neighbors: 8  frequency:0{
 	float altitude<-grid_value;  // altitude d'apres le MNT
@@ -557,6 +582,8 @@ grid parcelle file: grid_data neighbors: 8  frequency:0{
 species building{
 	float height <- 15.0;
 	rgb color <- rgb(167,109,67);
+	string type; 
+
 	
 	aspect base{
 		draw shape depth: height at: location color: color;
@@ -573,13 +600,17 @@ experiment demo type: gui {
 	parameter 'Trail size' var: nb_last_positions min:0 max:200  category: "Preferences";
 	parameter 'Trail smoothness' var: trail_smoothness min:0.01 max:1.0  category: "Preferences";
 	output synchronized: true{
-		display "carte" type: opengl {			
+
+		display "carte" type: opengl toolbar:false background:#black{
+
 			grid parcelle   elevation:grid_value  	grayscale:true triangulation: true refresh: false;
 			species slopes aspect:base position:{0,0,0.0};
 			species aerial_ways aspect:base position:{0,0,0.0};
 			species people aspect:base;
-			species debug aspect: base;
-			species building aspect: base;
+			//species graph_debug aspect: base;
+			species building aspect: base ;
+			species road aspect: base ;
+
 		}
 			
 
