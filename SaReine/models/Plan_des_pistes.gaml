@@ -17,8 +17,13 @@ model Avalanche
 global {
 	bool show_slopes <- true;
 	bool show_triangles <- false;
+	bool change_skier <- false;
 	int nb_last_positions <- 100;
+	float camera_distance <- 250.0;
+	float camera_angle <- 20.0;
+	float camera_lens <- 45.0;
 	float trail_smoothness <- 0.2 min:0.01 max: 1.0;
+	float factor <- 1.0;
 	
 	//données SIG
 	string grid_data_file <- "../includes/Alpes250.asc";
@@ -26,12 +31,14 @@ global {
 	geometry shape <- envelope(grid_data);	
 	file shape_file_slopes <- shape_file("../includes/shp/ski_slopes.shp");
 	file shape_file_aerial <- shape_file("../includes/shp/aerial_ways.shp");
+	file shape_file_buildings <- shape_file("../includes/shp/buildings.shp");
 	float offset;
 	graph slopes_graph;
 	graph aerial_graph;
 	
 	point dims <- {4.5#m,12.0#m};
-	
+	rgb trail_color <- rgb(150,150,150);
+	people the_skier;
 	
 	graph ski_domain;
 	
@@ -50,21 +57,8 @@ global {
 		"chamois"::["verte"::5.0,"bleue"::25.0,"rouge"::60.0,"noire"::100.0,
 					"freeride"::1.0,"link"::100.0,"acces"::100.0,"liaison"::100.0]
 	];		
-	
-	
-//	map<string, map<string,float>> init_proba_wander <- [
-//		"1*"::["verte"::100.0,"bleue"::1,"rouge"::1,"noire"::1,
-//					"freeride"::1.0,"link"::1,"acces"::1,"liaison"::1],
-//		"2*"::["verte"::100,"bleue"::100.0,"rouge"::1,"noire"::1,
-//					"freeride"::1.0,"link"::1,"acces"::1,"liaison"::1],
-//		"3*"::["verte"::1,"bleue"::1,"rouge"::100.0,"noire"::1,
-//					"freeride"::1,"link"::1,"acces"::1,"liaison"::1],
-//		"chamois"::["verte"::1,"bleue"::1,"rouge"::1,"noire"::100.0,
-//					"freeride"::1.0,"link"::100.0,"acces"::100.0,"liaison"::100.0]
-//	];	
-	
-	
 
+	
 	
 	map<string, map<generic_edge,float>> proba_wander;
 //	map<generic_edge,float> proba_wander;
@@ -128,7 +122,21 @@ global {
 		
 
 	init {
-		create aerial_ways from:shape_file_aerial with:[name::string(get("name")),type::string(get("type")), two_ways::bool(get("two_ways"))]{
+		create building from:shape_file_buildings {	
+			float val <- parcelle(location).grid_value;
+			location <- location + {0,0,val};
+		//	write shape.area;
+			if shape.area < 400{
+				height <- 5.0;
+			}
+			if shape.area < 600{
+				height <- 8.0;
+			//	color <- #green;
+			}
+		}
+	
+	
+		create aerial_ways from:shape_file_aerial with:[occupancy::int(get("occupancy")),lift_type::string(get("aerialway")),name::string(get("name")),type::string(get("type")), two_ways::bool(get("two_ways"))]{
 			loop i from: 0 to:length(shape.points)-1{	
 				float val <- parcelle(shape.points[i]).grid_value;
 				shape <- set_z(shape,i,val+50);
@@ -226,8 +234,11 @@ global {
 		create people number:800{
 			//location<-any_location_in(one_of(union(slopes, aerial_ways)));
 			location<-any_location_in(one_of(slopes));
-			last_positions <- [location];//list_with(nb_last_positions,location);
+			shifted_location <- location;
+			last_positions <- [location];
 		}
+		
+		the_skier <- one_of(people);
 		
 		slopes_graph <-directed(as_edge_graph(slopes));
 		aerial_graph <- directed(as_edge_graph(aerial_ways));
@@ -242,6 +253,13 @@ global {
 			do test_graph;
 		}
 		
+	}
+	
+	reflex events{
+		if change_skier{
+			change_skier <- false;
+			the_skier <- one_of(people);
+		}
 	}
 	
 }
@@ -381,14 +399,15 @@ species slopes parent: generic_edge{
 species aerial_ways parent: generic_edge{
 	bool two_ways;
 	list<people> waiting_line;
+	string lift_type;
 	int delay <- 60;
-	int capacity <- 4;
+	int occupancy <- 4;
 	float speed <- 3.0;
 	
 	init{
 		if name = "Pic Blanc"{
 			delay <- 200;
-			capacity <- 40;
+		//	occupancy <- 40;
 			speed <- 10.0;
 		}
 	}
@@ -401,10 +420,10 @@ species aerial_ways parent: generic_edge{
 	}
 	
 	reflex departure when: mod(cycle,delay) = 0{
-		ask first(capacity, waiting_line){
+		ask first(occupancy, waiting_line){
 			state <- "climb";
 		}
-		waiting_line <- waiting_line - first(capacity, waiting_line);
+		waiting_line <- waiting_line - first(occupancy, waiting_line);
 	}
 	
 }
@@ -423,7 +442,8 @@ species people skills:[moving] parallel: true{
 	float slidding<-0.0;
 	float angle <- float(rnd(359));
 	float speed2;
-	point shift;
+	point shift <- {0,0,0};
+	float camera_heading <- 0.0;
 	
 	string state <- "ski";
 	
@@ -444,6 +464,7 @@ species people skills:[moving] parallel: true{
 		if current_edge != nil and current_edge != last_edge{
 			if species(current_edge) = aerial_ways{
 				//speed <- 3.0;
+				turn_speed <- 0.0;
 				state <- "wait";
 				ask aerial_ways(current_edge){
 					waiting_line <+ myself;
@@ -479,11 +500,13 @@ species people skills:[moving] parallel: true{
 		shift <- shift + (({0,1,0} rotated_by (heading::{0,0,1}))*amplitude*cos(angle)-shift)*trail_smoothness;
 		shifted_location <- location + shift;
 		//shifted_location <- last(last_positions) + (shifted_location - last(last_positions))*trail_smoothness;
-		if species(current_edge) = aerial_ways{
+		if species(current_edge) = aerial_ways or nb_last_positions = 0{
 			last_positions <- [];
 		}else{
 			last_positions <- last(nb_last_positions-1,last_positions)+shifted_location;
 		}
+		camera_heading <- heading+angle_amp*cos(90+angle+slidding);
+		
 		
 		
 	}
@@ -491,10 +514,12 @@ species people skills:[moving] parallel: true{
 	
 	aspect base{
 		if current_edge != nil and species(current_edge) = slopes{
-			shape <- (rectangle(dims.x,dims.y) rotated_by (heading+90+angle_amp*cos(90+angle+slidding)));
+		//	shape <- (rectangle(dims.x,dims.y) rotated_by (heading+90+angle_amp*cos(90+angle+slidding)));
+			shape <- (rectangle(dims.x,dims.y) rotated_by (camera_heading+90));
 			draw shape color: color at: shifted_location;
-			draw polyline(last_positions) color: #grey;
-			//draw polyline(last_positions) color: slopes(current_edge).color;
+			if length(last_positions)>1{
+				draw polyline(last_positions) color: trail_color;				
+			}
 		}
 		else{
 			shape <- rectangle(dims.x,dims.y) rotated_by (heading+90);
@@ -523,12 +548,20 @@ grid parcelle file: grid_data neighbors: 8  frequency:0{
 // 		else {ma_couleur<-#green;}
 //   }
 
-	aspect basic	{
+	aspect basic {
         //juste pour vérifier (faut ajouter l'agent parcelle dans le display si on veut le voir)
         draw rectangle(1#m,1#m) color:ma_couleur depth:altitude border:#black ; 
 	}
 }
 
+species building{
+	float height <- 15.0;
+	rgb color <- rgb(167,109,67);
+	
+	aspect base{
+		draw shape depth: height at: location color: color;
+	}
+}
 
 
 /***********************************************
@@ -540,16 +573,49 @@ experiment demo type: gui {
 	parameter 'Trail size' var: nb_last_positions min:0 max:200  category: "Preferences";
 	parameter 'Trail smoothness' var: trail_smoothness min:0.01 max:1.0  category: "Preferences";
 	output synchronized: true{
-		display "carte" type: opengl {
+		display "carte" type: opengl {			
 			grid parcelle   elevation:grid_value  	grayscale:true triangulation: true refresh: false;
 			species slopes aspect:base position:{0,0,0.0};
 			species aerial_ways aspect:base position:{0,0,0.0};
 			species people aspect:base;
 			species debug aspect: base;
+			species building aspect: base;
 		}
 			
 
 	} 
 }
 
+experiment "First person view" type: gui {
+	parameter 'Show slopes' var: show_slopes   category: "Preferences";
+	parameter 'Show slopes directions' var: show_triangles   category: "Preferences";
+	parameter 'Trail size' var: nb_last_positions min:0 max:200  category: "Preferences";
+	parameter 'Trail smoothness' var: trail_smoothness min:0.01 max:1.0  category: "Preferences";
+	parameter 'Change first view skier' var: change_skier   category: "First view";	
+	parameter 'Camera distance' var: camera_distance  min:0.0 max: 1000.0 step: 10.0 category: "First view";
+	parameter 'Camera angle' var: camera_angle  min:0.0 max: 90.0 step: 1.0 category: "First view";
+	parameter 'Camera lens' var: camera_lens  min:0.0 max: 120.0 step: 1.0 category: "First view";
 
+	output synchronized: true{
+		display "carte" type: opengl {
+//			camera #default dynamic: true location: {int(first(people).shifted_location.x), int(first(people).shifted_location.y), int(first(people).location.z+50)} target:
+//			{cos(first(people).camera_heading) * first(people).speed + int(first(people).shifted_location.x), sin(first(people).camera_heading) * first(people).speed + int(first(people).shifted_location.y), int(first(people).location.z+50)};
+			camera #default dynamic: true
+			target:  the_skier.shifted_location
+			location: the_skier.shifted_location+{0,0,50}
+			+{-cos(the_skier.camera_heading), -sin(the_skier.camera_heading), 0}*camera_distance*cos(camera_angle)
+			+ {0,0,camera_distance *sin(camera_angle)}
+			lens: camera_lens;
+		//	location: the_skier.shifted_location+{0,0,50}+{-cos(the_skier.camera_heading), -sin(the_skier.camera_heading), tan(min(89.9,camera_angle))}*camera_distance;
+			
+			grid parcelle   elevation:grid_value  	grayscale:true triangulation: true refresh: false;
+			species slopes aspect:base position:{0,0,0.0};
+			species aerial_ways aspect:base position:{0,0,0.0};
+			species people aspect:base;
+			species debug aspect: base;
+			species building aspect: base;
+		}
+			
+
+	} 
+}
