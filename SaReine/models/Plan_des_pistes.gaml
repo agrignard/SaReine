@@ -24,6 +24,8 @@ global {
 	float camera_lens <- 45.0;
 	float trail_smoothness <- 0.2 min:0.01 max: 1.0;
 	float factor <- 1.0;
+	float z_shift <- 50.0;
+	float roads_z_shift <- 1.0;
 	
 	//données SIG
 	string grid_data_file <- "../includes/Alpes250.asc";
@@ -31,8 +33,8 @@ global {
 	geometry shape <- envelope(grid_data);	
 	file shape_file_slopes <- shape_file("../includes/shp/ski_slopes.shp");
 	file shape_file_aerial <- shape_file("../includes/shp/aerial_ways.shp");
-	file shape_file_buildings <- file("../includes/shp/building.shp");
-	file shape_file_roads <- file("../includes/shp/road.shp");
+	file shape_file_buildings <- file("../includes/shp/buildings.shp");
+	file shape_file_roads <- file("../includes/shp/roads_network.shp");
 
 	float offset;
 	graph slopes_graph;
@@ -124,7 +126,12 @@ global {
 		
 
 	init {
-		create building from:shape_file_buildings {	
+		string resolution <- first(regex_matches(grid_data_file,'\\d+'));
+		if resolution = "50" {
+			z_shift <- 20.0;
+		}
+		
+		create building from:shape_file_buildings with: [type::string(read ("NATURE"))] {	
 			float val <- parcelle(location).grid_value;
 			location <- location + {0,0,val};
 		//	write shape.area;
@@ -135,13 +142,23 @@ global {
 				height <- 8.0;
 			//	color <- #green;
 			}
+			if type="Industrial" {
+				color <- #blue ;
+			}	
+//			loop i from: 0 to:length(shape.points)-1{	
+//				val <- parcelle(shape.points[i]).grid_value;
+//				shape <- set_z(shape,i,val+z_shift);
+//			}
 		}
 	
 	
-		create aerial_ways from:shape_file_aerial with:[occupancy::int(get("occupancy")),lift_type::string(get("aerialway")),name::string(get("name")),type::string(get("type")), two_ways::bool(get("two_ways"))]{
+	
+		create aerial_ways from:shape_file_aerial with:[occupancy::int(get("occupancy")),lift_type::string(get("aerialway")),
+				name::string(get("name")),type::string(get("type")), two_ways::bool(get("two_ways"))
+		]{
 			loop i from: 0 to:length(shape.points)-1{	
 				float val <- parcelle(shape.points[i]).grid_value;
-				shape <- set_z(shape,i,val+50);
+				shape <- set_z(shape,i,val+z_shift);
 			}
 			if first(shape.points).z > last(shape.points).z {
 				shape <- polyline(reverse(shape.points));
@@ -159,7 +176,7 @@ global {
 		
 		string sens_attribute; 
 		write "MNT: "+grid_data_file+" loaded.";		
-		string resolution <- first(regex_matches(grid_data_file,'\\d+'));
+		
 		if ("sens "+resolution) in first(shape_file_slopes).attributes.keys{
 			write "Loading attributes at resolution "+resolution;
 			sens_attribute <- "sens "+resolution;
@@ -196,7 +213,7 @@ global {
 			}
 			loop i from: 0 to:length(shape.points)-1{
 				float val <- parcelle(shape.points[i]).grid_value;
-				shape <- set_z(shape,i,val+50);
+				shape <- set_z(shape,i,val+z_shift);
 			}
 			if first(shape.points).z < last(shape.points).z {
 				shape <- polyline(reverse(shape.points));
@@ -255,19 +272,11 @@ global {
 			do test_graph;
 		}
 		
-		create building from: shape_file_buildings with: [type::string(read ("NATURE"))] {
-			loop i from: 0 to:length(shape.points)-1{	
-				float val <- parcelle(shape.points[i]).grid_value;
-				shape <- set_z(shape,i,val+50);
-			}
-			if type="Industrial" {
-				color <- #blue ;
-			}
-		}
+	
 		create road from: shape_file_roads {
 			loop i from: 0 to:length(shape.points)-1{	
 				float val <- parcelle(shape.points[i]).grid_value;
-				shape <- set_z(shape,i,val+50);
+				shape <- set_z(shape,i,val+roads_z_shift);
 			}
 		}
 		
@@ -423,10 +432,24 @@ species aerial_ways parent: generic_edge{
 	float speed <- 3.0;
 	
 	init{
-		if name = "Pic Blanc"{
-			delay <- 200;
-		//	occupancy <- 40;
-			speed <- 10.0;
+//		if name = "Pic Blanc"{
+//			delay <- 200;
+//			speed <- 10.0;
+//		}
+		switch lift_type {
+			match "cable_car" {
+				delay <- 200;
+				speed <- 10.0;
+			}
+			match "gondola"{
+				delay <- 15;
+				speed <- 10.0;
+			}
+			default {
+				delay <- 3;
+				speed <- 4.0;
+			}
+			
 		}
 	}
 	
@@ -548,9 +571,9 @@ species people skills:[moving] parallel: true{
 }
 
 species road  {
-	rgb color <- #black ;
+	rgb color <- rgb(210,210,210) ;
 	aspect base {
-		draw shape color: color ;
+		draw shape width: 4#m color: color ;
 	}
 }
 
@@ -597,6 +620,7 @@ species building{
 experiment demo type: gui {
 	parameter 'Show slopes' var: show_slopes   category: "Preferences";
 	parameter 'Show slopes directions' var: show_triangles   category: "Preferences";
+	//parameter 'Set height correction' var: z_shift min:0.0 max: 50.0  category: "Preferences";
 	parameter 'Trail size' var: nb_last_positions min:0 max:200  category: "Preferences";
 	parameter 'Trail smoothness' var: trail_smoothness min:0.01 max:1.0  category: "Preferences";
 	output synchronized: true{
@@ -620,6 +644,7 @@ experiment demo type: gui {
 experiment "First person view" type: gui {
 	parameter 'Show slopes' var: show_slopes   category: "Preferences";
 	parameter 'Show slopes directions' var: show_triangles   category: "Preferences";
+	//parameter 'Set height correction' var: z_shift min:0.0 max: 50.0  category: "Preferences";
 	parameter 'Trail size' var: nb_last_positions min:0 max:200  category: "Preferences";
 	parameter 'Trail smoothness' var: trail_smoothness min:0.01 max:1.0  category: "Preferences";
 	parameter 'Change first view skier' var: change_skier   category: "First view";	
@@ -645,6 +670,7 @@ experiment "First person view" type: gui {
 			species people aspect:base;
 			species debug aspect: base;
 			species building aspect: base;
+	//		species road aspect: base;
 		}
 			
 
