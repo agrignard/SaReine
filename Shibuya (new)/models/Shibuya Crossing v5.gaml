@@ -11,7 +11,8 @@ global {
 	int nb_people <- 10;
 	bool can_cross <- false;
 	int timing <- 500;
-	float precision <- 0.001;
+//	float precision <- 0.001;
+	float precision <- 0.1;
 	float factor <- 1.0;
 	
 	shape_file bounds <- shape_file("../includes/Shibuya.shp");
@@ -68,6 +69,8 @@ global {
 	list<geometry> walking_area_divided;
 	list<geometry> walk_graph;
 	
+	list<point> nodes;
+	
 	init {
 		create road from: highway_line_shape_file;
 		create building from: building_polygon_shape_file with:[height::float(get("height"))];
@@ -118,68 +121,72 @@ global {
 		
 		walking_area_divided <- walking_area_divided accumulate (make_convex(each));
 		
-	
-		
-		loop w over: walking_area_divided{
-			loop w2 over: walking_area_divided - w{
-				geometry tmp <- inter(w,w2);
-				if tmp !=nil and (length(tmp.points)>1){
-					walk_graph <+ polyline([w.location,w2.location]);
-					create pedestrian_path {
-						shape <- polyline([w.location,w2.location]);
-						list<geometry> fs <- free_spaces_shape_file overlapping self;
-						free_space <- fs first_with (each covers shape); 
-						if free_space = nil {
-							free_space <- shape + P_shoulder_length;
-						}
-					}
-				}
-			}
-		}
+//	
+//		list<geometry> tmp_geom <- walking_area_divided;
+//		loop w over: walking_area_divided{
+//			tmp_geom <- tmp_geom - w;
+//			loop w2 over: tmp_geom{
+//				geometry tmp <- inter(w,w2);
+//				if tmp !=nil and (length(tmp.points)>1){
+//					walk_graph <+ polyline([w.location,w2.location]);
+//		
+//					create pedestrian_path {
+//						shape <- polyline([w.location,w2.location]);
+//						list<geometry> fs <- free_spaces_shape_file overlapping self;
+//						//free_space <- fs first_with (each covers shape); 
+//						//if free_space = nil {
+//							//free_space <- shape + 2*P_shoulder_length;
+//							free_space <- shape + 5;
+//					//	}
+//					}
+//				}
+//			}
+//		}
 		
 
 		
-	//	bounds_shape <- bounds_shape - union(building collect each.shape);
+		bounds_shape <- bounds_shape - union(building collect each.shape);
 		
 		
 	//	create pedestrian_path from: union(pedestrian_paths_shape_file,waiting_area)  {
 	
-//		float ml <- 3.0;
-//		int i <-  0;
-
-//		loop  while: (i+1) * ml < shape.width{
-//			int j <-  0;
-//			loop  while: (j+1) * ml < shape.height{
+		float ml <- 3.0;
+		int i <-  0;
+		loop  while: (i+1) * ml < shape.width{
+			int j <-  0;
+			loop  while: (j+1) * ml < shape.height{
+				create pedestrian_path{
+					shape <- polyline([{i*ml,j*ml},{(i+1)*ml,j*ml}]);
+				}
+				create pedestrian_path{
+					shape <- polyline([{i*ml,j*ml},{i*ml,(j+1)*ml}]);
+				}
 //				create pedestrian_path{
-//					shape <- polyline([{i*ml,j*ml},{(i+1)*ml,j*ml}]);
+//					shape <- polyline([{i*ml,j*ml},{(i+1)*ml,(j+1)*ml}]);
 //				}
 //				create pedestrian_path{
-//					shape <- polyline([{i*ml,j*ml},{i*ml,(j+1)*ml}]);
+//					shape <- polyline([{i*ml,(j+1)*ml},{(i+1)*ml,j*ml}]);
 //				}
-////				create pedestrian_path{
-////					shape <- polyline([{i*ml,j*ml},{(i+1)*ml,(j+1)*ml}]);
-////				}
-////				create pedestrian_path{
-////					shape <- polyline([{i*ml,(j+1)*ml},{(i+1)*ml,j*ml}]);
-////				}
-//				j <- j +1;
-//			}
-//			i <- i + 1;
-//		}
+				j <- j +1;
+			}
+			i <- i + 1;
+		}
 		
-//		ask pedestrian_path{
-//			if  !(bounds_shape covers self.shape){
-//				do die;
-//			}
-//		}
-//		
-//		ask pedestrian_path   {
-//			list<geometry> fs <- free_spaces_shape_file overlapping self;
-//			free_space <- fs first_with (each covers shape); 
-//			if free_space = nil {
-//				free_space <- shape + P_shoulder_length;
-//			}
-//		}
+		ask pedestrian_path{
+			if  !(bounds_shape covers self.shape){
+				do die;
+			}
+		}
+		
+		ask pedestrian_path   {
+			list<geometry> fs <- free_spaces_shape_file overlapping self;
+			free_space <- fs first_with (each covers shape); 
+			if free_space = nil {
+				free_space <- shape + P_shoulder_length;
+			}
+		}
+		
+		nodes <-remove_duplicates(pedestrian_path accumulate ([first(each.shape.points),last(each.shape.points)]));
 		
 		ask waiting_area{
 			loop k from: 0 to: length(shape.points)-2 step: 1{
@@ -337,13 +344,14 @@ global {
 
 
 species pedestrian_path skills: [pedestrian_road]{
-	
+	rgb color <- rnd_color(255);
 	
 	aspect default { 
 		draw shape  color: #gray;
 	}
 	aspect free_area_aspect {
-		draw free_space color: #lightpink border: #black;
+		draw shape  color: color;
+		draw free_space color: rgb(color,20) border: #black;// rgb(255,174,201,20) border: #black;
 		
 		
 	}
@@ -425,6 +433,7 @@ species people skills: [pedestrian] control: fsm{
 	bool going_to_cross <- false;
 	bool waiting <- false;
 	point wait_location;
+
 	
 	state find_new_destination initial: true{
 		final_dest <- any_location_in(open_area);
@@ -438,8 +447,12 @@ species people skills: [pedestrian] control: fsm{
 	state go_to_final_destination{
 		enter{
 			dest <- final_dest;
+			dest <- nodes closest_to dest;
+			location <- nodes closest_to self;
+			do compute_virtual_path pedestrian_graph:network target: dest;
 		}
-		do walk_to target: dest;
+		//do walk_to target: desti;
+		do walk;
 		transition to: find_new_destination when: norm(location - dest) < precision;
 	}
 	
@@ -451,15 +464,22 @@ species people skills: [pedestrian] control: fsm{
 				current_waiting_area <- one_of(current_area.waiting_areas);
 			}				
 			dest <- any_location_in(current_waiting_area);
+			dest <- nodes closest_to dest;
+			location <- nodes closest_to self;
+			do compute_virtual_path pedestrian_graph:network target: dest ;
 		}
-				
-		do walk_to target: dest;
-		transition to: waiting_to_cross when: (norm(location - dest) < precision) or (distance_to(self,current_waiting_area)< precision);
+		do walk;
+			//	do walk_to target: desti;
+		transition to: waiting_to_cross when: (norm(location - dest) < precision) or (distance_to(self,current_waiting_area)< shoulder_length);
 	}
 	
 	state waiting_to_cross{
 		enter{
-			dest <- first(point(intersection(polyline(current_waiting_area.shape.points),polyline([location, location+current_waiting_area.direction]))));
+	//		dest <- first(point(intersection(polyline(current_waiting_area.shape.points),polyline([location, location+current_waiting_area.direction]))));
+			dest <- first(point(intersection(polyline(current_area.shape.points),polyline([location, location+current_waiting_area.direction]))));
+			if dest = nil{
+				dest <- any_location_in(current_waiting_area);
+			}
 		}	
 		do walk_to target: dest;
 		transition to: crossing when: can_cross and (norm(location - dest) < 2);
@@ -501,6 +521,12 @@ species people skills: [pedestrian] control: fsm{
 		draw pyramid(shoulder_length/2) color: color;
 		draw sphere(shoulder_length/4) at: location + {0,0,shoulder_length/2} color: #black;
 		draw sphere(shoulder_length*7/32) at: location + ({shoulder_length/16,0,0} rotated_by (heading::{0,0,1}))+ {0,0,shoulder_length*15/32} color: rgb(191,181,164);
+		draw circle(0.5*shoulder_length) color: color at: dest;
+		draw polyline([location,dest]) width: 2 color: color;
+		if state = "go_to_crosswalk" or state = "go_to_final_destination"{
+			draw polyline(waypoints) width: 4 color: color;
+		}
+		
 	}
 }
 
@@ -539,12 +565,13 @@ experiment ShibuyaCrossing type: gui  {
 //			{cos(first(people).heading) * first(people).speed + int(first(people).location.x), sin(first(people).heading) * first(people).speed + int(first(people).location.y), 5/factor};
 			
 			image photo refresh: false transparency: 0 ;
+			species pedestrian_path aspect: default;
 		 	species people aspect: 3d;
 		//	species walking_area;
 		//	species waiting_area transparency: 0.9;
 		//	species crosswalk;
-		//	species pedestrian_path aspect: default;
-			species debug transparency: 0.4;
+			
+		//	species debug transparency: 0.4;
 			species building transparency: 0.4;
 			//species pedestrian_path aspect: free_area_aspect transparency: 0.4;
 	
