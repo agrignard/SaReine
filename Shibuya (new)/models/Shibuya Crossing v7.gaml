@@ -8,23 +8,34 @@
 model ShibuyaCrossing
 
 global {
-	int nb_people <- 1500;
-	bool can_cross <- false;
-	int timing <- 500;
-//	float precision <- 0.001;
+	int nb_people <- 1800;
+	float car_spawning_interval <- 4#s;
+	float global_max_speed <- 40 #km / #h;
 	float precision <- 0.2;
 	float factor <- 1.0;
 	float mesh_size <- 3.0;
 	
+	list<float> schedule_times <- [ 15#s, // pedestrian light to green
+									60#s, // pedestrian light to red
+									85#s, // car group 1 to green
+									100#s,// car group 1 to red
+									105#s,// car group 2 to green
+									120#s // car group 2 to red
+								  ];
+	
+	
+	float step <- 0.5#s;
+	
 	shape_file bounds <- shape_file("../includes/Shibuya.shp");
 	image_file photo <- (image_file(("../includes/Shibuya.png")));
 
-	shape_file highway_line_shape_file <- shape_file("../includes/highway_line.shp");
+//	shape_file highway_line_shape_file <- shape_file("../includes/highway_line.shp");
 	shape_file building_polygon_shape_file <- shape_file("../includes/building_polygon.shp");
 	shape_file fake_building_polygon_shape_file <- shape_file("../includes/fake_buildings.shp");
 	shape_file crosswalk_shape_file <- shape_file("../includes/crosswalk.shp");
 	shape_file walking_area_shape_file <- shape_file("../includes/walking area.shp");
 	shape_file free_spaces_shape_file <- shape_file("../includes/free spaces.shp");
+	shape_file road_shape_file <- shape_file("../includes/roads.shp");
 //	shape_file pedestrian_paths_shape_file <- shape_file("../includes/pedestrian paths.shp");
 	
 	geometry shape <- envelope(bounds) ;
@@ -60,14 +71,20 @@ global {
 	float P_A_pedestrian_SFM_simple parameter: true <-4.5category: "SFM simple" ;
 	graph network;
 	
-	float step <- 0.1;
-	
+
+	bool can_cross <- false;
+	float time_since_last_spawn <- 0.0;
 	
 	people the_people;
 	point endpoint;
+	int schedule_step <- 0;
+	float schedule_time <- 0.0;
+	float time_to_clear_crossing <- 0.0;
 	
 	geometry open_area;
 	geometry bounds_shape;
+	
+	graph road_network;
 
 	list<geometry> walking_area_divided;
 	list<point> nodes;
@@ -75,7 +92,36 @@ global {
 	list<geometry> voronoi_diagram;
 	
 	init {
-		create road from: highway_line_shape_file;
+		create road from: road_shape_file with: [group::int(get("group"))];
+		ask road {
+			point p <- last(shape.points);
+			if length(intersection where (each.location = p))=0{
+				create intersection{
+					location <- p;
+					group <- myself.group;
+				}
+			}
+		}
+		
+		// create spawn intersections and the corresponding destination
+		ask road where (each.group > 0){
+			create intersection{
+				location <- first(myself.shape.points);
+				color <- #blue;
+				is_spawn_location <- true;
+			}
+		}
+		
+		road_network <- as_driving_graph(road,intersection);
+		
+		ask intersection where (each.group > 0) {
+			do initialize;
+		}
+		
+		ask intersection where (each.is_spawn_location){
+			final_intersection <- compute_target();
+		}
+			
 		create building from: building_polygon_shape_file with:[height::float(get("height"))];
 		
 		create fake_building from: fake_building_polygon_shape_file{
@@ -235,48 +281,48 @@ global {
 		}	
 	
 		create debug;
-
+		do spawn_car;
 	}
 	
-	list<geometry> make_convex(geometry g){
-		if length(g.points)<3{
-			return [g];
-		}else{
-			int pos <- 0;
-			int index <- 0;
-			list<point> l <- g.points+(g.points[1]);
-			int nl <- length(l);
-			bool last_angle <- mod(angle_between(l[nl-2],l[nl-3],l[nl-1]),360) < 180;
-			
-			loop i from: 1 to: length(l) - 2{
-				if mod(angle_between(l[i],l[i-1],l[i+1]),360) < 180{
-					pos <- pos+1;
-					if last_angle = false{
-						index <- i;
-					}
-					last_angle <- true;
-				}else{
-					last_angle <- false;
-				}
-					
-			}
-			if (pos = 0) or (pos=length(g.points)-1){
-				return [g];
-			}else if pos < length(g.points)-1 - pos{
-				return make_convex(polygon(reverse(g.points)));
-			}else{
-				geometry sol <- polygon([l[index-1],l[index],l[index+1]]);
-				geometry sol2 <- g - sol;				
-				if sol2 != nil{
-					return (sol2.geometries accumulate make_convex(each))+sol;
-				}else{
-					return [sol];
-				}
-			}			
-		}
-
-	}
-	
+//	list<geometry> make_convex(geometry g){
+//		if length(g.points)<3{
+//			return [g];
+//		}else{
+//			int pos <- 0;
+//			int index <- 0;
+//			list<point> l <- g.points+(g.points[1]);
+//			int nl <- length(l);
+//			bool last_angle <- mod(angle_between(l[nl-2],l[nl-3],l[nl-1]),360) < 180;
+//			
+//			loop i from: 1 to: length(l) - 2{
+//				if mod(angle_between(l[i],l[i-1],l[i+1]),360) < 180{
+//					pos <- pos+1;
+//					if last_angle = false{
+//						index <- i;
+//					}
+//					last_angle <- true;
+//				}else{
+//					last_angle <- false;
+//				}
+//					
+//			}
+//			if (pos = 0) or (pos=length(g.points)-1){
+//				return [g];
+//			}else if pos < length(g.points)-1 - pos{
+//				return make_convex(polygon(reverse(g.points)));
+//			}else{
+//				geometry sol <- polygon([l[index-1],l[index],l[index+1]]);
+//				geometry sol2 <- g - sol;				
+//				if sol2 != nil{
+//					return (sol2.geometries accumulate make_convex(each))+sol;
+//				}else{
+//					return [sol];
+//				}
+//			}			
+//		}
+//
+//	}
+//	
 	bool is_convex(geometry g){
 		int pos <- 0;
 		list<point> l <- g.points+g.points[2];
@@ -288,8 +334,15 @@ global {
 		return (pos = 0) or (pos = length(g.points)-1);
 	}
 	
+	action spawn_car{
+		intersection i <- one_of(intersection where (each.is_spawn_location));
+		create car with: (location: i.location, target: i.final_intersection);
+		
+	}
+	
 
-	reflex switch_traffic_light when: mod(cycle,timing)=200{
+	//reflex switch_traffic_light when: mod(cycle,timing)=200{
+	action switch_pedestrian_lights{
 		can_cross <- !can_cross;
 		if can_cross {
 			ask people{
@@ -303,6 +356,74 @@ global {
 			}
 		}
 	}
+	
+	reflex main_scheduler{
+		int cycle_time <- 1200;
+		bool advance_step <- false;
+		
+		// spawn cars
+		
+		if time_since_last_spawn > car_spawning_interval {
+			do spawn_car;
+			time_since_last_spawn <- 0.0;
+		}else{
+			time_since_last_spawn <- time_since_last_spawn + step;
+		}
+		
+		// change traffic lights
+		
+		switch schedule_step{		
+			match 0{
+				if  schedule_time > schedule_times[0]{
+					do switch_pedestrian_lights;
+					schedule_step <- schedule_step + 1;
+				}
+			}
+			match 1{
+				if schedule_time > schedule_times[1]{
+					do switch_pedestrian_lights;
+					schedule_step <- schedule_step + 1;
+					time_to_clear_crossing <- schedule_times[2]-schedule_times[1];
+				}
+			}
+			match 2{
+				time_to_clear_crossing <- time_to_clear_crossing - step;
+				if schedule_time > schedule_times[2]{
+					ask intersection where (each.group = 1){
+						do to_green;
+					}
+					schedule_step <- schedule_step + 1;
+				}
+			}
+			match 3 {
+				if schedule_time > schedule_times[3]{
+					ask intersection where (each.group = 1){
+						do to_red;
+					}
+					schedule_step <- schedule_step + 1;
+				}
+			}
+			match 4 {
+				if schedule_time > schedule_times[4]{
+					ask intersection where (each.group = 2){
+						do to_green;
+					}
+					schedule_step <- schedule_step + 1;
+				}
+			}
+			match 5{
+				if schedule_time > schedule_times[5]{
+					ask intersection where (each.group = 2){
+						do to_red;
+					}
+					schedule_step <- 0;
+					schedule_time <- - step;
+				}
+			}
+		}
+		
+		schedule_time <- schedule_time + step;
+	}
 }
 
 /*******************************************
@@ -312,6 +433,133 @@ global {
  * 
  * 
  * ***************************************** */
+
+
+species road skills: [skill_road]{
+	int group;
+	int num_lanes <- 1;
+	float maxspeed <- global_max_speed;
+	
+	aspect default {
+		draw shape color: #red;
+	}
+}
+
+
+species intersection skills: [skill_road_node] {
+	bool is_traffic_signal <- false;
+	bool is_spawn_location <- false;
+	int group;
+	intersection final_intersection <- nil;
+	rgb color <- #white;
+//	float counter <- rnd(time_to_change);
+	
+	//take into consideration the roads coming from both direction (for traffic light)
+	list<road> ways;
+	//list<road> ways2;
+	
+	//if the traffic light is green
+	bool is_green;
+//	rgb color <- #yellow;
+
+	aspect default{
+		draw circle(0.5) color: color;
+	}
+	
+	action initialize{
+		is_traffic_signal <- true;
+		stop << [];
+		loop rd over: roads_in {
+			ways << road(rd);
+		}
+		do to_red;
+	}
+	
+	intersection compute_target{
+		if empty(roads_out){
+			return self;
+		}else{
+			return intersection(road(first(roads_out)).target_node).compute_target();
+		}
+	}
+	
+	action to_green {
+		stop[0] <- [];
+		is_green <- true;
+		color <- #green;
+	}
+
+	//shift the traffic light to red
+	action to_red {
+		stop[0] <- ways;
+		is_green <- false;
+		color <- #red;
+	}
+}
+
+species car skills: [advanced_driving] {
+	rgb color <- rnd_color(255);
+	intersection target;
+	
+	init {
+		vehicle_length <- 4.0 #m;
+		//car occupies 2 lanes
+		num_lanes_occupied <-1;
+		max_speed <- global_max_speed;
+				
+	//	proba_block_node <- proba_block_node_car;
+		proba_respect_priorities <- 1.0;
+		proba_respect_stops <- [1.0];
+		proba_use_linked_road <- 0.0;
+
+		lane_change_limit <- 2;
+		linked_lane_limit <- 0;
+		
+	}
+	//choose a random target and compute the path to it
+	reflex choose_path when: final_target = nil {
+		do compute_path graph: road_network target: target; 
+	}
+	reflex move when: final_target != nil {
+		do drive;
+		//if arrived at target, kill it and create a new car
+		if (final_target = nil) {
+			do unregister;
+			do die;
+		}
+	}
+	
+
+	
+	aspect default {
+		if (current_road != nil) {
+			draw rectangle(3.8#m, 1.7#m ) depth: 0.7#m color: color rotate: heading at: location+{0,0,0.2#m};	
+	//	draw circle(0.5) at: location color: color;
+			draw (circle(0.3#m)rotated_by(90::{1,0,0})) rotate: heading  color: #black depth: 0.3#m at: location + {0,0,0.3} + ({1#m,0.6,0} rotated_by (heading::{0,0,1}));
+			draw (circle(0.3#m)rotated_by(90::{1,0,0})) rotate: heading  color: #black depth: 0.3#m at: location +  {0,0,0.3} + ({-1#m,0.6,0} rotated_by (heading::{0,0,1}));
+			draw (circle(0.3#m)rotated_by(-90::{1,0,0})) rotate: heading  color: #black depth: 0.3#m at: location +  {0,0,0.3} + ({1#m,-0.6,0} rotated_by (heading::{0,0,1}));
+			draw (circle(0.3#m)rotated_by(-90::{1,0,0})) rotate: heading  color: #black depth: 0.3#m at: location +  {0,0,0.3} + ({-1#m,-0.6,0} rotated_by (heading::{0,0,1}));
+			draw (triangle(0.5#m,0.5#m)rotated_by(-90::{1,0,0})) rotate: heading  color: #black depth: 1.6#m at: location +  {0,0,1} + ({-1#m,0.8,0} rotated_by (heading::{0,0,1}));
+			draw (triangle(1#m,0.5#m)rotated_by(-90::{1,0,0})) rotate: heading  color: #black depth: 1.6#m at: location +  {0,0,1} + ({0.6#m,0.8,0} rotated_by (heading::{0,0,1}));
+			draw (square(0.05#m)rotated_by(26::{0,1,0})) rotate: heading  color: color depth: 0.52#m at: location +  {0,0,0.87} + ({-1.22#m,0.8,0} rotated_by (heading::{0,0,1}));
+ 			draw (square(0.05#m)rotated_by(26::{0,1,0})) rotate: heading  color: color depth: 0.52#m at: location +  {0,0,0.87} + ({-1.22#m,-0.8,0} rotated_by (heading::{0,0,1}));
+ 			draw (square(0.05#m)rotated_by(-45::{0,1,0})) rotate: heading  color: color depth: 0.65#m at: location +  {0,0,0.87} + ({1.08#m,0.8,0} rotated_by (heading::{0,0,1}));
+ 			draw (square(0.05#m)rotated_by(-45::{0,1,0})) rotate: heading  color: color depth: 0.65#m at: location +  {0,0,0.87} + ({1.08#m,-0.8,0} rotated_by (heading::{0,0,1}));
+ 			draw rectangle(1.65#m, 1.65#m ) depth: 0.05#m color: color rotate: heading at: location+{0,0,1.3#m}+ ({-0.19#m,0,0} rotated_by (heading::{0,0,1}));	
+ 			draw rectangle(1.65#m, 1.6#m ) depth: 0.4#m color: #black rotate: heading at: location+{0,0,0.9#m}+ ({-0.19#m,0,0} rotated_by (heading::{0,0,1}));	
+			draw (square(0.05#m)rotated_by(3::{1,0,0})) rotate: heading  color: color depth: 0.47#m at: location +  {0,0,0.87} + ({-0.4#m,0.825,0} rotated_by (heading::{0,0,1}));
+ 			draw (square(0.05#m)rotated_by(-3::{1,0,0})) rotate: heading  color: color depth: 0.47#m at: location +  {0,0,0.87} + ({-0.4#m,-0.825,0} rotated_by (heading::{0,0,1}));
+  
+			
+		//	draw rectangle(3.8#m, 1.7#m ) depth: 0.8#m color: rgb(color,20) rotate: heading at: location+{0,0,0.1#m};	
+		}
+	}
+
+}
+
+
+
+
 
 
 
@@ -410,15 +658,12 @@ species waiting_area{
 	}
 }
 
-species road {
-	aspect default {
-		draw shape color: #red depth: 1;
-	}
-}
+
+
 
 species people skills: [pedestrian] control: fsm{
 	rgb color <- rnd_color(255);
-	float speed <- gauss(5,1.5) #km/#h min: 2 #km/#h;
+	float normal_speed <- gauss(5.2,1.5) #km/#h min: 2.5 #km/#h;
 	point dest;
 	point final_dest;
 	walking_area final_area;
@@ -435,6 +680,7 @@ species people skills: [pedestrian] control: fsm{
 
 	
 	state find_new_destination initial: true{
+		speed <- normal_speed;
 		//final_dest <- any_location_in(open_area);
 		final_dest <- one_of(nodes_inside).location;
 		final_area <- walking_area closest_to final_dest;
@@ -450,6 +696,7 @@ species people skills: [pedestrian] control: fsm{
 	
 	state go_to_grid_before_final_destination{
 		enter{
+			speed <- normal_speed;		
 			dest <- nodes closest_to self;
 			tracking <+ dest;
 		}
@@ -485,6 +732,7 @@ species people skills: [pedestrian] control: fsm{
 	
 		state go_to_grid_before_crosswalk{
 		enter{
+			speed <- normal_speed;
 			dest <- nodes closest_to self;
 			tracking <+ dest;
 		}
@@ -549,6 +797,9 @@ species people skills: [pedestrian] control: fsm{
 			}
 			tracking <+ dest;
 			current_area <- walking_area closest_to current_waiting_area.opposite;
+		}
+		if !can_cross{// boost to finish crossing before green light
+			speed <- max(1,norm(dest-location)/(1#s+time_to_clear_crossing)) * normal_speed;
 		}
 		do walk_to target: dest;
 		bool other_side_reached <- self.location distance_to current_area < 1#m;
@@ -619,13 +870,18 @@ species debug{
 			
 				draw circle(0.1) color: #red at: e.location;
 			}
-//			loop g over: walk_graph{
-//				draw g color: #red;
-//			}
+
 
 	}
 	
-	aspect essai{
+	aspect traffic_light{
+		draw union(crosswalk collect(each.shape)) color: can_cross?#green:#red;	
+		ask intersection where each.is_traffic_signal{
+			draw circle(3) at: location color: is_green?#green:#red;
+		}
+	}
+	
+	aspect grid{
 		draw open_area color: #pink;
 		loop p over: nodes{
 			draw circle(0.5) at: p color: #yellow;
@@ -645,18 +901,53 @@ experiment ShibuyaCrossing type: gui  {
 			camera 'default' location: {98.4788,143.3489,64.7132} target: {98.6933,81.909,0.0};
 //			camera #default dynamic: true location: {int(first(people).location.x), int(first(people).location.y), 5/factor} target:
 //			{cos(first(people).heading) * first(people).speed + int(first(people).location.x), sin(first(people).heading) * first(people).speed + int(first(people).location.y), 5/factor};
-			species fake_building transparency: 0.9;
-			
-			image photo refresh: false transparency: 0 ;
-			species pedestrian_path aspect: default;
+			species fake_building transparency: 0.9;			
+			image photo refresh: false transparency: 0 ;	
 		 	species people aspect: 3d;
-		//	species walking_area;
-		//	species waiting_area transparency: 0.9;
-		//	species crosswalk;
-			
-		//	species debug transparency: 0.4;
-		//species debug aspect: essai;
 			species building transparency: 0.4;
+			species car transparency: 0.6;
+			
+			//species pedestrian_path aspect: free_area_aspect transparency: 0.4;
+	
+		}
+	}
+}
+
+
+experiment "First person view" type: gui  {
+	float minimum_cycle_duration <- 0.001#s;
+	output {
+		display map type: 3d axes: false background: #darkgray{
+			//camera 'default' location: {98.4788,143.3489,64.7132} target: {98.6933,81.909,0.0};
+	//		camera 'default' location: {98.4788,143.3489,64.7132} target: {98.6933,81.909,0.0};
+			camera #default dynamic: true location: {int(first(people).location.x), int(first(people).location.y), 1#m} target:
+			{cos(first(people).heading) * first(people).speed + int(first(people).location.x), sin(first(people).heading) * first(people).speed + int(first(people).location.y), 1#m};
+			species fake_building transparency: 0.9;			
+			image photo refresh: false transparency: 0 ;	
+		 	species people aspect: 3d;
+			species building transparency: 0.4;
+			species car transparency: 0.6;
+			
+			//species pedestrian_path aspect: free_area_aspect transparency: 0.4;
+	
+		}
+	}
+}
+
+experiment "Car view" type: gui  {
+	float minimum_cycle_duration <- 0.001#s;
+	output {
+		display map type: 3d axes: false background: #darkgray{
+			//camera 'default' location: {98.4788,143.3489,64.7132} target: {98.6933,81.909,0.0};
+	//		camera 'default' location: {98.4788,143.3489,64.7132} target: {98.6933,81.909,0.0};
+			camera #default dynamic: true location: {int(first(car).location.x), int(first(car).location.y), 0.8#m} target:
+			{cos(first(car).heading) + int(first(car).location.x), sin(first(car).heading)  + int(first(car).location.y), 0.8#m};
+			species fake_building transparency: 0.9;			
+			image photo refresh: false transparency: 0 ;	
+		 	species people aspect: 3d;
+			species building transparency: 0.4;
+			species car transparency: 0.6;
+			
 			//species pedestrian_path aspect: free_area_aspect transparency: 0.4;
 	
 		}
