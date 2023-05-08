@@ -1,21 +1,21 @@
 /**
 * Name: ShibuyaCrossing
 * Based on the internal skeleton template. 
-* Author: Patrick Taillandier
+* Author: Tri Nguyen-Huu, Patrick Taillandier
 * Tags: 
 */
 
 model ShibuyaCrossing
 
 global {
-	int nb_people <- 1500;
+	int nb_people <- 500;
 	float step <- 0.1#s;
 	
-	float car_spawning_interval <- 4#s;
+	float car_spawning_interval <- 5#s;
 	float global_max_speed <- 40 #km / #h;
 	float precision <- 0.2;
 	float factor <- 1.0;
-	float mesh_size <- 4.0;
+	float mesh_size <- 2.0;
 	
 	list<float> schedule_times <- [ 15#s, // pedestrian light to green
 									60#s, // pedestrian light to red
@@ -37,6 +37,7 @@ global {
 	shape_file walking_area_shape_file <- shape_file("../includes/walking area.shp");
 	shape_file road_shape_file <- shape_file("../includes/roads.shp");
 	shape_file traffic_signals_shape_file <- shape_file("../includes/traffic_signals.shp");
+	shape_file trees_shape_file <- shape_file("../includes/trees.shp");
 
 	
 	geometry shape <- envelope(bounds);
@@ -85,8 +86,7 @@ global {
 
 	
 	geometry open_area;
-	geometry bounds_shape;
-	
+
 	graph road_network;
 
 	list<geometry> walking_area_divided;
@@ -125,8 +125,19 @@ global {
 			final_intersection <- compute_target();
 		}
 			
-		create building from: building_polygon_shape_file with:[height::float(get("height")),floor::float(get("floor"))]{
+		create building from: building_polygon_shape_file with:[height::float(get("height")),floor::float(get("floor")),invisible::bool(get("invisible"))]{
 			location <- location + {0,0,floor};
+		}
+		
+		create tree from: trees_shape_file with:[size:string(get("size"))]{
+			if size = "large"{
+				height <- 5#m;
+				radius <- 3#m;
+			}
+			if size = "small"{
+				height <- 1.5#m;
+				radius <- 0.75#m;
+			}
 		}
 		
 		create fake_building from: fake_building_polygon_shape_file{
@@ -160,15 +171,13 @@ global {
 			}
 		}
 		
-	
-		
 		
 		open_area <- union(walking_area collect each.shape);
-		bounds_shape <- open_area - union(building collect each.shape);
-		list<geometry> lg;
-		
-		
+		geometry bounds_shape;
+		bounds_shape <- open_area - union(building collect each.shape);	
+
 		if pedestrian_path_init = "voronoi"{
+			list<geometry> lg;
 			loop w over: walking_area{	
 				walking_area_divided <- walking_area_divided + split_geometry(w - union(building collect (each.shape)),mesh_size);
 			}
@@ -180,84 +189,39 @@ global {
 		}else{
 			float minx <- min(envelope(open_area).points accumulate each.x);
 			float maxx <- max(envelope(open_area).points accumulate each.x);
-	//		float area_width <- maxx-minx;
 			float miny <- min(envelope(open_area).points accumulate each.y);
 			float maxy <- max(envelope(open_area).points accumulate each.y);
-	//		float area_height <- maxx-minx;
-						
-//				list<geometry> lines;
-//				int num <- int(area_width/mesh_size);
-//				loop k from: 0 to: num {
-//					lines << line([{k * area_width/num, 0}, {k * area_width/num, area_height}]);	
-//				}
-//				num <- int(area_height/mesh_size);
-//				loop k from: 0 to: num {
-//					lines << line([{0, k * area_height/num, 0}, {area_width, k * area_height/num}]);	
-//				}
-//				
-//				lines <- clean_network(union(lines).geometries, 0.00, true, true);
-//				create pedestrian_path from: lines;
-			
+	
+			float area_width <- maxx-minx;
+			float area_height <- maxx-minx;
+					
 			list<geometry> lines;
-			float i <-  float(floor(minx));
-			loop  while: i < maxx{
-				float j <-  float(floor(miny));
-				loop  while: j < maxy{
-					lines << polyline([{i,j},{i+mesh_size,j}]);
-					lines << polyline([{i,j},{i,j+mesh_size}]);
-					lines <<polyline([{i,j},{i+mesh_size,j+mesh_size}]);
-					lines << polyline([{i,j+mesh_size},{i+mesh_size,j}]);
-					j <- j + mesh_size;
-				}
-				i <- i + mesh_size;
+			int num <- int(area_width/mesh_size);
+			loop k from: 0 to: num {
+				lines << line([{k * area_width/num, 0}, {k * area_width/num, area_height}]);
 			}
-			
-			lines <- lines where (bounds_shape covers each);
-//			write "cleaning";
-//			lines <- clean_network(union(lines).geometries, 0.001, true, false);
-//			write "cleaned";
-			create pedestrian_path from: lines;
-			
-//			float i <-  float(floor(minx));
-//			loop  while: i < maxx{
-//				float j <-  float(floor(miny));
-//				loop  while: j < maxy{
-//					create pedestrian_path{
-//						shape <- polyline([{i,j},{i+mesh_size,j}]);
-//					}
-//					create pedestrian_path{
-//						shape <- polyline([{i,j},{i,j+mesh_size}]);
-//					}
-//					create pedestrian_path{
-//						shape <- polyline([{i,j},{i+mesh_size,j+mesh_size}]);
-//					}
-//					create pedestrian_path{
-//						shape <- polyline([{i,j+mesh_size},{i+mesh_size,j}]);
-//					}
-//					j <- j + mesh_size;
-//				}
-//				i <- i + mesh_size;
-//			}		
-//			
-//			ask pedestrian_path{
-//				if  !(bounds_shape covers self.shape){
-//					do die;
-//				}
-//			}
+			num <- int(area_height/mesh_size);
+			loop k from: 0 to: num {
+				lines << line([{0, k * area_height/num, 0}, {area_width, k * area_height/num}]);	
+			}
+				
+			list<geometry> clean_lines <- [];
+			loop w over: walking_area{
+				list<geometry> tmp <- lines collect(inter(each,w));
+				tmp <- clean_network(union(tmp).geometries, 0.001, true, true);
+				list<point> pl <- remove_duplicates(tmp accumulate(each.points));
+				loop p over: pl{
+					list<point> np <- (pl where ((each distance_to p) < mesh_size*sqrt(2)*1.01))
+						-(pl where ((each distance_to p) < mesh_size*1.01)); 
+					tmp <- tmp + (np collect(polyline([p,each])));
+				}
+				clean_lines <- clean_lines + remove_duplicates(tmp);
+			}
+			clean_lines <- clean_lines where (bounds_shape covers each);		
+			create pedestrian_path from: clean_lines{
+				free_space <- shape + (mesh_size*0.6);
+			}
 		}
-		
-
-		
-		ask pedestrian_path   {
-			free_space <- shape + (mesh_size*0.6);
-//			my_area <- first(walking_area overlapping self);
-//			if my_area = nil{
-//				write "gz";
-//				color <- #red;
-//			}
-		}
-		
-		
 		
 		nodes <-remove_duplicates(pedestrian_path accumulate ([first(each.shape.points),last(each.shape.points)]));		
 		nodes_inside <- (nodes collect geometry(each)) inside open_area;
@@ -268,23 +232,14 @@ global {
 		
 		network <- as_edge_graph(pedestrian_path);
 		
-//		ask walking_area{
-//			write self;
-//			write waiting_areas.values;
-//		}	
 //		ask pedestrian_path {
 //			do build_intersection_areas pedestrian_graph: network;
 //		}
 		
-	//	write walking_area[0];
-	
-		point start_point <- any_location_in(one_of(walking_area));
-		endpoint <- any_location_in(open_area);
+
 		create people number:nb_people{
-			//location <- start_point; //any_location_in(one_of(walking_area));
 			obstacle_species<-[building];
-			current_area <- one_of(walking_area);
-			location <- any_location_in(current_area);
+			location <- any_location_in(bounds_shape);
 			dest <- location;
 			final_dest <- location;
 			current_waiting_area <- nil;
@@ -323,14 +278,14 @@ global {
 		}	
 	
 		create debug;
-		do spawn_car;
+		loop times: 12{
+			do spawn_car;
+		}
+
 		
 		
 		create traffic_signal from: traffic_signals_shape_file with:[group::int(get("group")),crosswalk_left::int(get("cw_l")),
 				crosswalk_right::int(get("cw_r")),car_light::string(get("car_light")),direction_crosswalk::int(get("dir_crossw"))]{
-//			road current_road <- (road where(each.group = self.group)) closest_to self;
-//			list<point> lp <- last(2,current_road.shape.points);
-			//heading <- towards(lp[0],lp[1]) + 90;
 			point dir <- (first(crosswalk where (each.id=direction_crosswalk)).waiting_areas closest_to self).direction;
 			heading <- towards({0,0},dir);
 			if crosswalk_left >0{
@@ -340,78 +295,8 @@ global {
 			if crosswalk_right >0{
 				point dir_r <- (first(crosswalk where (each.id=crosswalk_right)).waiting_areas closest_to self).direction;
 				heading_r <- towards({0,0},dir_r);	
-			}
-
-			
-//			create traffic_light_3d{
-//				location <- myself.location;
-//				group <- myself.group;
-//				heading <- towards(lp[0],lp[1]) + 90;
-//			}
-//		
+			}	
 		}
-		
-//		ask intersection where (each.group > 0) {
-//			list<point> lp <- last(2,first(roads_in).shape.points);
-//			create traffic_light_3d{
-//				location <- myself.location;
-//				group <- myself.group;
-//				heading <- towards(lp[0],lp[1]) + 90;
-//			}
-//		
-//		}
-
-
-	}
-	
-//	list<geometry> make_convex(geometry g){
-//		if length(g.points)<3{
-//			return [g];
-//		}else{
-//			int pos <- 0;
-//			int index <- 0;
-//			list<point> l <- g.points+(g.points[1]);
-//			int nl <- length(l);
-//			bool last_angle <- mod(angle_between(l[nl-2],l[nl-3],l[nl-1]),360) < 180;
-//			
-//			loop i from: 1 to: length(l) - 2{
-//				if mod(angle_between(l[i],l[i-1],l[i+1]),360) < 180{
-//					pos <- pos+1;
-//					if last_angle = false{
-//						index <- i;
-//					}
-//					last_angle <- true;
-//				}else{
-//					last_angle <- false;
-//				}
-//					
-//			}
-//			if (pos = 0) or (pos=length(g.points)-1){
-//				return [g];
-//			}else if pos < length(g.points)-1 - pos{
-//				return make_convex(polygon(reverse(g.points)));
-//			}else{
-//				geometry sol <- polygon([l[index-1],l[index],l[index+1]]);
-//				geometry sol2 <- g - sol;				
-//				if sol2 != nil{
-//					return (sol2.geometries accumulate make_convex(each))+sol;
-//				}else{
-//					return [sol];
-//				}
-//			}			
-//		}
-//
-//	}
-//	
-	bool is_convex(geometry g){
-		int pos <- 0;
-		list<point> l <- g.points+g.points[2];
-		loop i from: 1 to: length(l) - 2{
-			if mod(angle_between(l[i],l[i-1],l[i+1]),360) < 180{
-				pos <- pos+1;
-			}
-		}
-		return (pos = 0) or (pos = length(g.points)-1);
 	}
 	
 	action spawn_car{
@@ -552,11 +437,9 @@ species intersection skills: [skill_road_node] {
 	int group;
 	intersection final_intersection <- nil;
 	rgb color <- #white;
-//	float counter <- rnd(time_to_change);
-	
+
 	//take into consideration the roads coming from both direction (for traffic light)
 	list<road> ways;
-	//list<road> ways2;
 	
 	//if the traffic light is green
 	bool is_green;
@@ -606,30 +489,33 @@ species intersection skills: [skill_road_node] {
 
 species car skills: [advanced_driving] {
 	rgb color <- rnd_color(255);
+	rgb color2;
 	intersection target;
+	string type <- "car" among: ["car","truck"];
 	
 	init {
-		vehicle_length <- 4.0 #m;
-		//car occupies 2 lanes
-		num_lanes_occupied <-1;
-		max_speed <- global_max_speed;
-				
-	//	proba_block_node <- proba_block_node_car;
-		proba_respect_priorities <- 1.0;
-		proba_respect_stops <- [1.0];
-		proba_use_linked_road <- 0.0;
-
-		lane_change_limit <- 2;
-		linked_lane_limit <- 0;
+		type <- rnd_choice(["car"::0.9,"truck"::0.1]);
+		switch type {
+			match "car"{
+				vehicle_length <- 4.0 #m;
+			}
+			match "truck"{
+				vehicle_length <- 8.0 #m;
+				color2 <- rnd_color(180,255);
+			}
+		}
 		
+		max_speed <- global_max_speed;
 	}
+	
 	//choose a random target and compute the path to it
 	reflex choose_path when: final_target = nil {
 		do compute_path graph: road_network target: target; 
 	}
+	
 	reflex move when: final_target != nil {
 		do drive;
-		//if arrived at target, kill it and create a new car
+		//if arrived at target, die and create a new car
 		if (final_target = nil) {
 			do unregister;
 			do die;
@@ -640,33 +526,45 @@ species car skills: [advanced_driving] {
 	
 	aspect default {
 		if (current_road != nil) {
-			draw rectangle(3.8#m, 1.7#m ) depth: 0.7#m color: color rotate: heading at: location+{0,0,0.2#m};	
-	//	draw circle(0.5) at: location color: color;
-			draw (circle(0.3#m)rotated_by(90::{1,0,0})) rotate: heading  color: #black depth: 0.3#m at: location + {0,0,0.3} + ({1#m,0.6,0} rotated_by (heading::{0,0,1}));
-			draw (circle(0.3#m)rotated_by(90::{1,0,0})) rotate: heading  color: #black depth: 0.3#m at: location +  {0,0,0.3} + ({-1#m,0.6,0} rotated_by (heading::{0,0,1}));
-			draw (circle(0.3#m)rotated_by(-90::{1,0,0})) rotate: heading  color: #black depth: 0.3#m at: location +  {0,0,0.3} + ({1#m,-0.6,0} rotated_by (heading::{0,0,1}));
-			draw (circle(0.3#m)rotated_by(-90::{1,0,0})) rotate: heading  color: #black depth: 0.3#m at: location +  {0,0,0.3} + ({-1#m,-0.6,0} rotated_by (heading::{0,0,1}));
-			draw (triangle(0.5#m,0.5#m)rotated_by(-90::{1,0,0})) rotate: heading  color: #black depth: 1.6#m at: location +  {0,0,1} + ({-1#m,0.8,0} rotated_by (heading::{0,0,1}));
-			draw (triangle(1#m,0.5#m)rotated_by(-90::{1,0,0})) rotate: heading  color: #black depth: 1.6#m at: location +  {0,0,1} + ({0.6#m,0.8,0} rotated_by (heading::{0,0,1}));
-			draw (square(0.05#m)rotated_by(26::{0,1,0})) rotate: heading  color: color depth: 0.52#m at: location +  {0,0,0.87} + ({-1.22#m,0.8,0} rotated_by (heading::{0,0,1}));
- 			draw (square(0.05#m)rotated_by(26::{0,1,0})) rotate: heading  color: color depth: 0.52#m at: location +  {0,0,0.87} + ({-1.22#m,-0.8,0} rotated_by (heading::{0,0,1}));
- 			draw (square(0.05#m)rotated_by(-45::{0,1,0})) rotate: heading  color: color depth: 0.65#m at: location +  {0,0,0.87} + ({1.08#m,0.8,0} rotated_by (heading::{0,0,1}));
- 			draw (square(0.05#m)rotated_by(-45::{0,1,0})) rotate: heading  color: color depth: 0.65#m at: location +  {0,0,0.87} + ({1.08#m,-0.8,0} rotated_by (heading::{0,0,1}));
- 			draw rectangle(1.65#m, 1.65#m ) depth: 0.05#m color: color rotate: heading at: location+{0,0,1.3#m}+ ({-0.19#m,0,0} rotated_by (heading::{0,0,1}));	
- 			draw rectangle(1.65#m, 1.6#m ) depth: 0.4#m color: #black rotate: heading at: location+{0,0,0.9#m}+ ({-0.19#m,0,0} rotated_by (heading::{0,0,1}));	
-			draw (square(0.05#m)rotated_by(3::{1,0,0})) rotate: heading  color: color depth: 0.47#m at: location +  {0,0,0.87} + ({-0.4#m,0.825,0} rotated_by (heading::{0,0,1}));
- 			draw (square(0.05#m)rotated_by(-3::{1,0,0})) rotate: heading  color: color depth: 0.47#m at: location +  {0,0,0.87} + ({-0.4#m,-0.825,0} rotated_by (heading::{0,0,1}));
-  
-			
-		//	draw rectangle(3.8#m, 1.7#m ) depth: 0.8#m color: rgb(color,20) rotate: heading at: location+{0,0,0.1#m};	
-		}
+			switch type{
+				match "car"{
+					draw rectangle(3.8#m, 1.7#m ) depth: 0.7#m color: color rotate: heading at: location+{0,0,0.2#m};	
+					draw (circle(0.3#m)rotated_by(90::{1,0,0})) rotate: heading  color: #black depth: 0.3#m at: location + {0,0,0.3} + ({1#m,0.6,0} rotated_by (heading::{0,0,1}));
+					draw (circle(0.3#m)rotated_by(90::{1,0,0})) rotate: heading  color: #black depth: 0.3#m at: location +  {0,0,0.3} + ({-1#m,0.6,0} rotated_by (heading::{0,0,1}));
+					draw (circle(0.3#m)rotated_by(-90::{1,0,0})) rotate: heading  color: #black depth: 0.3#m at: location +  {0,0,0.3} + ({1#m,-0.6,0} rotated_by (heading::{0,0,1}));
+					draw (circle(0.3#m)rotated_by(-90::{1,0,0})) rotate: heading  color: #black depth: 0.3#m at: location +  {0,0,0.3} + ({-1#m,-0.6,0} rotated_by (heading::{0,0,1}));
+					draw (triangle(0.5#m,0.5#m)rotated_by(-90::{1,0,0})) rotate: heading  color: #black depth: 1.6#m at: location +  {0,0,1} + ({-1#m,0.8,0} rotated_by (heading::{0,0,1}));
+					draw (triangle(1#m,0.5#m)rotated_by(-90::{1,0,0})) rotate: heading  color: #black depth: 1.6#m at: location +  {0,0,1} + ({0.6#m,0.8,0} rotated_by (heading::{0,0,1}));
+					draw (square(0.05#m)rotated_by(26::{0,1,0})) rotate: heading  color: color depth: 0.52#m at: location +  {0,0,0.87} + ({-1.22#m,0.8,0} rotated_by (heading::{0,0,1}));
+		 			draw (square(0.05#m)rotated_by(26::{0,1,0})) rotate: heading  color: color depth: 0.52#m at: location +  {0,0,0.87} + ({-1.22#m,-0.8,0} rotated_by (heading::{0,0,1}));
+		 			draw (square(0.05#m)rotated_by(-45::{0,1,0})) rotate: heading  color: color depth: 0.65#m at: location +  {0,0,0.87} + ({1.08#m,0.8,0} rotated_by (heading::{0,0,1}));
+		 			draw (square(0.05#m)rotated_by(-45::{0,1,0})) rotate: heading  color: color depth: 0.65#m at: location +  {0,0,0.87} + ({1.08#m,-0.8,0} rotated_by (heading::{0,0,1}));
+		 			draw rectangle(1.65#m, 1.65#m ) depth: 0.05#m color: color rotate: heading at: location+{0,0,1.3#m}+ ({-0.19#m,0,0} rotated_by (heading::{0,0,1}));	
+		 			draw rectangle(1.65#m, 1.6#m ) depth: 0.4#m color: #black rotate: heading at: location+{0,0,0.9#m}+ ({-0.19#m,0,0} rotated_by (heading::{0,0,1}));	
+					draw (square(0.05#m)rotated_by(3::{1,0,0})) rotate: heading  color: color depth: 0.47#m at: location +  {0,0,0.87} + ({-0.4#m,0.825,0} rotated_by (heading::{0,0,1}));
+		 			draw (square(0.05#m)rotated_by(-3::{1,0,0})) rotate: heading  color: color depth: 0.47#m at: location +  {0,0,0.87} + ({-0.4#m,-0.825,0} rotated_by (heading::{0,0,1}));			
+				}
+				match "truck"{
+					draw rectangle(7.8#m, 1.9#m ) depth: 0.2#m color: color rotate: heading at: location+{0,0,0.3#m};	
+					draw (circle(0.4#m)rotated_by(90::{1,0,0})) rotate: heading  color: #black depth: 0.3#m at: location + {0,0,0.4} + ({3#m,0.7,0} rotated_by (heading::{0,0,1}));
+					draw (circle(0.4#m)rotated_by(90::{1,0,0})) rotate: heading  color: #black depth: 0.28#m at: location +  {0,0,0.4} + ({-2#m,0.7,0} rotated_by (heading::{0,0,1}));
+					draw (circle(0.4#m)rotated_by(-90::{1,0,0})) rotate: heading  color: #black depth: 0.3#m at: location +  {0,0,0.4} + ({3#m,-0.7,0} rotated_by (heading::{0,0,1}));
+					draw (circle(0.4#m)rotated_by(-90::{1,0,0})) rotate: heading  color: #black depth: 0.28#m at: location +  {0,0,0.4} + ({-2#m,-0.7,0} rotated_by (heading::{0,0,1}));
+//					draw (triangle(0.5#m,0.5#m)rotated_by(-90::{1,0,0})) rotate: heading  color: #black depth: 1.6#m at: location +  {0,0,1} + ({-1#m,0.8,0} rotated_by (heading::{0,0,1}));
+					draw rectangle(1.7#m, 1.9#m ) depth: 0.9#m color: color rotate: heading at: location+({3.05,0,0.3#m} rotated_by (heading::{0,0,1}));	
+
+					draw (triangle(0.6#m,0.66#m)rotated_by(-90::{1,0,0})) rotate: heading  color: #black depth: 1.8#m at: location +  {0,0,1.4} + ({3.57#m,0.9,0} rotated_by (heading::{0,0,1}));
+		 			draw (square(0.05#m)rotated_by(-24::{0,1,0})) rotate: heading  color: color depth: 0.72#m at: location +  {0,0,1.18} + ({3.87#m,0.9,0} rotated_by (heading::{0,0,1}));
+		 			draw (square(0.05#m)rotated_by(-24::{0,1,0})) rotate: heading  color: color depth: 0.72#m at: location +  {0,0,1.18} + ({3.87#m,-0.9,0} rotated_by (heading::{0,0,1}));
+		 			draw rectangle(1.4#m, 1.85#m ) depth: 0.05#m color: color rotate: heading at: location+{0,0,1.8#m}+ ({2.9#m,0,0} rotated_by (heading::{0,0,1}));	
+	 				draw rectangle(1#m, 1.8#m ) depth: 0.6#m color: #black rotate: heading at: location+{0,0,1.2}+ ({2.9#m,0,0} rotated_by (heading::{0,0,1}));	
+	 				draw rectangle(0.5#m, 1.85#m ) depth: 0.6#m color: color rotate: heading at: location+{0,0,1.2}+ ({2.45#m,0,0} rotated_by (heading::{0,0,1}));	
+	 				draw rectangle(6#m, 2#m ) depth: 2.2#m color: color2 rotate: heading at: location+{0,0,0.2}+ ({-0.95#m,0,0} rotated_by (heading::{0,0,1}));	
+				}
+			}
+  		}
 	}
-
 }
-
-
-
-
 
 
 
@@ -679,9 +577,7 @@ species pedestrian_path skills: [pedestrian_road]{
 	}
 	aspect free_area_aspect {
 		draw shape  color: color;
-		draw free_space color: rgb(color,20) border: #black;// rgb(255,174,201,20) border: #black;
-		
-		
+		draw free_space color: rgb(color,20) border: #black;
 	}
 }
 
@@ -689,9 +585,12 @@ species pedestrian_path skills: [pedestrian_road]{
 species building {
 	float height;
 	float floor <- 0.0;
+	bool invisible <- false;
 	
 	aspect default {
-		draw shape color: #gray depth: height;		
+		if !invisible{
+			draw shape color: #gray depth: height;
+		}	
 	}
 }
 
@@ -720,11 +619,6 @@ species walking_area {
 				draw shape color: #red border: #black;
 			}
 		}
-		
-		
-//		loop g over: waiting_areas.values{
-//			draw g color: #yellow border: #black;
-//		}
 	}
 }
 
@@ -763,7 +657,6 @@ species waiting_area{
 	
 	aspect default {
 		draw shape color: #yellow border: #black;
-//		draw polyline([location,location+direction]) width: 2 color: #yellow;
 		draw waiting_front width: 5 color: #red;
 	}
 }
@@ -786,21 +679,17 @@ species people skills: [pedestrian] control: fsm{
 	point wait_location;
 	list<point> tracking;
 	string last_state;
-	int essai <- 0;
 	bool tester <- false;
 
 	
 	state find_new_destination initial: true{
 		speed <- normal_speed;
-		//final_dest <- any_location_in(open_area);
 		final_dest <- one_of(nodes_inside).location;
 		final_area <- walking_area closest_to final_dest;
 		current_waiting_area <- nil;
 		current_area <- walking_area closest_to self.location;	
 		tracking <- [location];
-	//	transition to: go_to_final_destination when: current_area = final_area;
 		transition to: go_to_grid_before_final_destination when: current_area = final_area;
-		//transition to: go_to_crosswalk when: current_area != final_area;
 		transition to: go_to_grid_before_crosswalk when: current_area != final_area;
 		last_state <- "find_new_destination";
 	}
@@ -809,35 +698,26 @@ species people skills: [pedestrian] control: fsm{
 		enter{
 			speed <- normal_speed;		
 			dest <- nodes closest_to self;
-			tracking <+ dest;
 		}
 		do walk_to target: dest;
 		if  norm(location - dest) < precision{
 			location <- dest;
 		}
 		transition to: go_to_final_destination when: norm(location - dest) < precision;
-	//	transition to: go_to_final_destination when: location = dest ;
 	}
 	
 	state go_to_final_destination{
 		enter{
-			essai <- 1;
 			dest <- final_dest;
-			essai <- 2;
 			dest <- nodes closest_to dest;
-			tracking <+ dest;
-			essai <- 4;
-		//	location <- nodes closest_to self;
+			tracking <+ location;
 			if norm(location - dest)>= precision{	
 				do compute_virtual_path pedestrian_graph:network target: dest;
 			}
-			essai <- 5;
 		}
-		//do walk_to target: desti;
 		if norm(location - dest)>= precision{	
 			do walk;
 		}
-		essai <- 6;
 		transition to: find_new_destination when: norm(location - dest) < precision;
 	}
 	
@@ -845,14 +725,13 @@ species people skills: [pedestrian] control: fsm{
 		enter{
 			speed <- normal_speed;
 			dest <- nodes closest_to self;
-			tracking <+ dest;
+			tracking <+ location;
 		}
 		do walk_to target: dest;
 		last_state <- "go_to_final_destination";
 		if  norm(location - dest) < precision{
 			location <- dest;
 		}
-	//	transition to: go_to_final_destination when: norm(location - dest) < precision;
 		transition to: go_to_crosswalk when: norm(location - dest) < precision ;
 	}
 	
@@ -865,33 +744,25 @@ species people skills: [pedestrian] control: fsm{
 			}				
 			dest <- any_location_in(current_waiting_area);
 			dest <- nodes closest_to dest;
-			tracking <+ dest;
-		//	location <- nodes closest_to self;
-			essai <- 4;
+			tracking <+ location;
 			if norm(location - dest)>= precision{	
 				do compute_virtual_path pedestrian_graph:network target: dest;
-			}
-			essai <- 5;
-			
+			}			
 		}
-		essai <- 6;
 		if norm(location - dest)>= precision{	
 			do walk;
 		}
-		essai <- 7;
-			//	do walk_to target: desti;
 			last_state <- "go_to_crosswalk";
 		transition to: waiting_to_cross when: (norm(location - dest) < precision) or (distance_to(self,current_waiting_area)< shoulder_length);
 	}
 	
 	state waiting_to_cross{
 		enter{
-	//		dest <- first(point(intersection(polyline(current_waiting_area.shape.points),polyline([location, location+current_waiting_area.direction]))));
 			dest <- first(point(intersection(polyline(current_area.shape.points),polyline([location, location+current_waiting_area.direction]))));
 			if dest = nil{
 				dest <- any_location_in(current_waiting_area);
 			}
-			tracking <+ dest;
+			tracking <+ location;
 		}	
 		do walk_to target: dest;
 		last_state <- "waiting_to_cross";
@@ -906,7 +777,7 @@ species people skills: [pedestrian] control: fsm{
 			}else{
 				dest <- any_location_in(current_waiting_area.opposite);
 			}
-			tracking <+ dest;
+			tracking <+ location;
 			current_area <- walking_area closest_to current_waiting_area.opposite;
 		}
 		if !can_cross{// boost to finish crossing before green light
@@ -927,62 +798,46 @@ species people skills: [pedestrian] control: fsm{
 	aspect default {
 		draw square(shoulder_length/2 ) at: location+{shoulder_length/5, shoulder_length/5}color: #black;
 		draw square(shoulder_length/2 ) at: location+{0,0,0.1} color: color;
-	//	draw essai width: 2 color: color;
-	
-//		draw circle(0.5*shoulder_length) color: color at: dest;
-//		draw square(0.5*shoulder_length) color: color at: final_dest;
-//		draw polyline([location,final_dest]) width: 1 color: color;		
-//		draw polyline([location,dest]) width: 2 color: color;
-	//	draw polyline(waypoints) width: 2 color: color;
 	}
 	
 	aspect 3d {		
 		draw pyramid(scale*shoulder_length/2) color: color;
 		draw sphere(scale*shoulder_length/4) at: location + {0,0,scale*shoulder_length/2} color: #black;
 		draw sphere(scale*shoulder_length*7/32) at: location + ({scale*shoulder_length/16,0,0} rotated_by (heading::{0,0,1}))+ {0,0,scale*shoulder_length*15/32} color: rgb(191,181,164);	
-//		draw circle(0.5*shoulder_length) color: color at: dest;
-//		draw polyline([location,dest]) width: 1 color: color;
 		if tester{
 			draw polyline(waypoints) width: 3 color: color;
 		}
 	}
 	
 		aspect debug {		
-		draw pyramid(shoulder_length/2) color: color;
-		draw sphere(shoulder_length/4) at: location + {0,0,shoulder_length/2} color: #black;
-		draw sphere(shoulder_length*7/32) at: location + ({shoulder_length/16,0,0} rotated_by (heading::{0,0,1}))+ {0,0,shoulder_length*15/32} color: rgb(191,181,164);
-		draw circle(0.5*shoulder_length) color: color at: dest;
-		draw square(0.5*shoulder_length) color: color at: final_dest depth: 10;
-		//draw polyline([location,dest]) width: 2 color: color;
-		draw polyline([location,final_dest]) width: 1 color: color;
-		draw polyline([location,dest]) width: 1 color: color;
-		draw circle(0.5*shoulder_length) color: color at: dest depth: 3;
-		if state = "go_to_crosswalk" or state = "go_to_final_destination"{
-			draw polyline(waypoints) width: 3 color: color;
+		draw pyramid(shoulder_length) color: color;
+		draw sphere(shoulder_length/3) at: location + {0,0,shoulder_length*2/3} color: #black;
+	
+		draw circle(0.3*shoulder_length) color: color depth: 0.3 at: dest;
+		draw cross(0.5*shoulder_length,0.2*shoulder_length) color: color at: final_dest depth: 0.3;
+		int nb_segments <- int(perimeter(polyline([dest,final_dest])));
+		loop i from: 0 to:nb_segments step:2{
+			draw polyline(points_along(polyline([dest,final_dest]),[i/(nb_segments+1),(i+1)/(nb_segments+1)]))+0.1 color: color depth: 0.14;
 		}
-	//	draw polyline(tracking) width: 2 color: #grey;
+
+		if state = "go_to_crosswalk" or state = "go_to_final_destination"{
+			point p <- centroid(first(waypoints));
+			draw polyline(waypoints collect(centroid(each))) + 0.15 color: color depth: 0.15;
+			draw polyline(tracking+p) + 0.15 depth: 0.15 color: rgb(color,0.2);
+		}else{
+			draw polyline([location,dest]) +0.15 color: color depth: 0.15;
+			draw polyline(tracking+location) + 0.15 depth: 0.15 color: rgb(color,0.2);
+		}
 		
 	}
 }
 
 species debug{
 	aspect default{
-		//	draw bounds_shape color: can_cross?#green:#red;	
-			//loop e over: walking_area_divided  {
 			loop e over: voronoi_diagram  {
-				draw e color: world.is_convex(e)?#blue:#red border: #black;
-		//		draw e color: #blue border: #black;
-//				list<geometry> truc <- triangulate(e);
-//				loop t over: truc{
-//									draw t color: #blue border: #black;
-//		
-		//		write e.geometries;
-			
-			
+				draw e color: #blue border: #black;
 				draw circle(0.1) color: #red at: e.location;
 			}
-
-
 	}
 	
 	aspect traffic_light{
@@ -1010,7 +865,6 @@ species traffic_signal{
 	float heading_l;
 	float heading_r;
 	int direction_crosswalk;
-	//int left_side <- 1;
 	string car_light <- "normal";
 	string current_color <- "red";
 	float light_z <- 5.5#m;
@@ -1108,26 +962,33 @@ species traffic_signal{
 	}
 }
 
+species tree{
+	string size;
+	float height <- 4#m;
+	float radius <- 2.2#m;
+	
+	aspect default{
+		draw circle(0.5) depth: height color: #brown;
+		draw sphere(2*radius) at: location+{0,0,height} color: #green;
+	}
+}
+
 
 experiment ShibuyaCrossing type: gui  {
 	float minimum_cycle_duration <- 0.001#s;
 	output {
 		display map type: 3d axes: false background: #darkgray{
-			//camera 'default' location: {98.4788,143.3489,64.7132} target: {98.6933,81.909,0.0};
 			camera 'default' location: {98.4788,143.3489,64.7132} target: {98.6933,81.909,0.0};
-//			camera #default dynamic: true location: {int(first(people).location.x), int(first(people).location.y), 5/factor} target:
-//			{cos(first(people).heading) * first(people).speed + int(first(people).location.x), sin(first(people).heading) * first(people).speed + int(first(people).location.y), 5/factor};
 			species fake_building transparency: 0.9;			
 			image photo refresh: false transparency: 0 ;	
 			species traffic_signal;
-	//		species walking_area transparency: 0.6;
-	//	species pedestrian_path aspect: default;
-			 	species people aspect: 3d;
-	//		species building transparency: 0.4;
-			species car transparency: 0.6;
-			
-			//species pedestrian_path aspect: free_area_aspect transparency: 0.4;
+			species pedestrian_path aspect: default;
+			species people aspect: 3d;
 	
+		//	species people aspect: debug;
+			species car transparency: 0.6;
+			species building transparency: 0.4;
+			species tree transparency: 0.7;
 		}
 	}
 }
@@ -1137,19 +998,15 @@ experiment "First person view" type: gui  {
 	float minimum_cycle_duration <- 0.001#s;
 	output {
 		display map type: 3d axes: false background: #darkgray{
-			//camera 'default' location: {98.4788,143.3489,64.7132} target: {98.6933,81.909,0.0};
-	//		camera 'default' location: {98.4788,143.3489,64.7132} target: {98.6933,81.909,0.0};
 			camera #default dynamic: true location: {int(first(people).location.x), int(first(people).location.y), 1#m} target:
 			{cos(first(people).heading) * first(people).speed + int(first(people).location.x), sin(first(people).heading) * first(people).speed + int(first(people).location.y), 1#m};
 			species fake_building transparency: 0.9;			
 			image photo refresh: false transparency: 0 ;	
 			species traffic_signal;
 		 	species people aspect: 3d;
+		 	species tree transparency: 0.6;
 			species building transparency: 0.4;
 			species car transparency: 0.6;
-			
-			//species pedestrian_path aspect: free_area_aspect transparency: 0.4;
-	
 		}
 	}
 }
@@ -1158,19 +1015,15 @@ experiment "Car view" type: gui  {
 	float minimum_cycle_duration <- 0.001#s;
 	output {
 		display map type: 3d axes: false background: #darkgray{
-			//camera 'default' location: {98.4788,143.3489,64.7132} target: {98.6933,81.909,0.0};
-	//		camera 'default' location: {98.4788,143.3489,64.7132} target: {98.6933,81.909,0.0};
 			camera #default dynamic: true location: {int(first(car).location.x), int(first(car).location.y), 0.8#m} target:
 			{cos(first(car).heading) + int(first(car).location.x), sin(first(car).heading)  + int(first(car).location.y), 0.8#m};
 			species fake_building transparency: 0.9;			
 			image photo refresh: false transparency: 0 ;	
 			species traffic_signal;
-
 		 	species people aspect: 3d;
+			species tree transparency: 0.6;
 			species building transparency: 0.4;
 			species car transparency: 0.6;
-			
-	
 		}
 	}
 }
