@@ -8,14 +8,26 @@
 model ShibuyaCrossing
 
 global {
-	int nb_people <- 18;
+	int nb_people <- 500;
 	float step <- 0.1#s;
 	
 	float car_spawning_interval <- 5#s;
 	float global_max_speed <- 40 #km / #h;
 	float precision <- 0.2;
 	float factor <- 1.0;
-	float mesh_size <- 2.0;
+	float mesh_size <- 4.0;
+	
+	float node_tolerance <- 0.0001;
+	
+	float train_max_speed <- 90 #km/#h;
+	float carriage_length <- 19.5#m;
+	float space_between_carriages <- 0.3#m;
+	int nb_carriages <- 10;
+	float time_stop_in_station <- 45#s;
+	map<string,float> spawn_time <- ["Yamanote_1"::150#s,"Yamanote_2"::150#s,"Saikyo_1"::150#s,"Saikyo_2"::150#s];
+	
+	rgb yamanote_green <- rgb(154, 205, 50);
+		
 	
 	list<float> schedule_times <- [ 15#s, // pedestrian light to green
 									60#s, // pedestrian light to red
@@ -29,7 +41,11 @@ global {
 	
 	
 	shape_file bounds <- shape_file("../includes/Shibuya.shp");
-	image_file photo <- (image_file(("../includes/Shibuya.png")));
+	//shape_file bounds <- shape_file("../includes/walking area.shp");
+
+	
+	image_file photo <- (image_file(("../includes/ShibuyaPS.png")));
+	matrix<int> im <- matrix<int>(photo);
 
 	shape_file building_polygon_shape_file <- shape_file("../includes/building_polygon.shp");
 	shape_file fake_building_polygon_shape_file <- shape_file("../includes/fake_buildings.shp");
@@ -38,6 +54,7 @@ global {
 	shape_file road_shape_file <- shape_file("../includes/roads.shp");
 	shape_file traffic_signals_shape_file <- shape_file("../includes/traffic_signals.shp");
 	shape_file trees_shape_file <- shape_file("../includes/trees.shp");
+	shape_file rail_shape_file <- shape_file("../includes/rail_tracks.shp");
 
 	
 	geometry shape <- envelope(bounds);
@@ -55,7 +72,6 @@ global {
 	string P_model_type <- "simple" among: ["simple", "advanced"] parameter: true ; 
 	string pedestrian_path_init <- "grid" among: ["voronoi", "grid"] parameter: true ; 
 	
-	//float P_A_pedestrian_SFM_advanced parameter: true <- 0.16 category: "SFM advanced" ;
 	float P_A_pedestrian_SFM_advanced parameter: true <- 0.0001 category: "SFM advanced" ;
 	float P_A_obstacles_SFM_advanced parameter: true <- 1.9 category: "SFM advanced" ;
 	float P_B_pedestrian_SFM_advanced parameter: true <- 0.1 category: "SFM advanced" ;
@@ -87,14 +103,105 @@ global {
 	
 	geometry open_area;
 
-	graph road_network;
+	graph road_network;	
+	graph rail_network;
 
 	list<geometry> walking_area_divided;
 	list<point> nodes;
 	list<geometry> nodes_inside;
 	list<geometry> voronoi_diagram;
 	
+	map<string,float> time_to_spawn;
+	list<string> line_names;
+	
 	init {
+		create rail from: rail_shape_file with: [name::string(get("name"))];
+//		ask rail{
+//			shape <- polyline(reverse(shape.points));
+//		}
+		do clean_railroad;
+		
+//		ask rail where (each.name = "Yamanote_1"){
+//			write [first(shape.points),last(shape.points)];
+//		}
+		
+		list<point> first_points <- rail collect first(each.shape.points);
+		list<point> last_points <- rail collect last(each.shape.points);
+		
+//		
+		ask rail{
+			create rail_wp{
+				location <- last(myself.shape.points);
+				is_traffic_signal <- true;
+			}
+		}
+		float spacing <- carriage_length + space_between_carriages;
+		ask rail where not(first(each.shape.points) in last_points){
+			float len <- perimeter(self.shape);
+			
+			create rail_wp{
+				location <- first(myself.shape.points);
+				is_spawn_location <- true;
+				name <- myself.name;
+				color <- #grey;
+			}
+			loop j from: 0 to: nb_carriages-1 {
+				point p <- first(points_along(shape,[(j+1)*spacing/len]));
+				create rail{
+					shape <- polyline([first(points_along(myself.shape,[j*spacing/len])), p]);
+					name <- myself.name;
+				}
+				create rail_wp{
+					location <- p;
+					is_spawn_location <- true;
+					name <- myself.name;
+					color <- #grey;
+					if j = nb_carriages-1{
+						loco_spawn <- true;
+						color <- #green;
+					}
+				}
+			}
+			int last_index <- 0;
+			
+			loop while: perimeter(polyline(first(last_index,shape.points))) < nb_carriages*spacing{
+				last_index <- last_index + 1;
+			}
+			int tmp <- length(shape.points) - last_index;
+			shape <- polyline([first(points_along(shape,[nb_carriages*spacing/len]))] + last(tmp,shape.points));		
+		}
+	
+
+		rail_network <- as_driving_graph(rail,rail_wp);
+		ask rail_wp where each.is_traffic_signal{
+			do initialize;
+		}
+		ask rail_wp{
+			final_intersection <- compute_target();
+		}
+		
+		line_names <- remove_duplicates(rail collect(each.name));
+		loop l over: line_names{
+			time_to_spawn << l::rnd(10.0)#s;
+		}
+		
+//		ask rail {
+//			rail_wp i;
+//			create rail_wp{
+//				location <- last(myself.shape.points);
+//				i <- self;
+//			}
+//			create rail_wp{
+//				location <- first(myself.shape.points);
+//				is_spawn_location <- true;
+//				final_intersection <- i;
+//			}
+//		}
+//		
+//		ask rail_wp where !each.is_spawn_location{
+//			do initialize;
+//		}
+		
 		create road from: road_shape_file with: [group::int(get("group"))];
 		ask road {
 			point p <- last(shape.points);
@@ -116,6 +223,7 @@ global {
 		}
 		
 		road_network <- as_driving_graph(road,intersection);
+		
 		
 		ask intersection where (each.group > 0) {
 			do initialize;
@@ -281,8 +389,6 @@ global {
 		loop times: 12{
 			do spawn_car;
 		}
-
-		
 		
 		create traffic_signal from: traffic_signals_shape_file with:[group::int(get("group")),crosswalk_left::int(get("cw_l")),
 				crosswalk_right::int(get("cw_r")),car_light::string(get("car_light")),direction_crosswalk::int(get("dir_crossw"))]{
@@ -305,6 +411,49 @@ global {
 		
 	}
 	
+	action spawn_train(string line_name){
+		write "Spawning "+line_name;
+		list<train> created_carriages;
+		train loco;
+
+		ask rail_wp where (each.name = line_name){
+			create train {
+				location <- myself.location;
+				target <- myself.final_intersection;
+//				if line_name = "Yamanote_1"{
+//						target <- rail_wp[2];
+//					
+//				}
+//				safety_distance_coeff <- 0.0;
+//				min_safety_distance <- 0.0#m;
+//				min_security_distance <- 0.0#m;
+//				security_distance_coeff <- 0.0;
+//				time_headway <- 0.0;
+				rail out <- rail(first(myself.roads_out));
+				heading <- angle_between(first(out.shape.points),first(out.shape.points)+{1.0,0},out.shape.points[1]);
+				speed <- 50#km/#h;
+				if myself.loco_spawn{
+					is_carriage <- false;
+					loco <- self;
+					max_deceleration <- 2#km/#h/#s;
+					name <- line_name+" locomotive";
+					write "to: "+target;
+				}else{
+					name <- line_name+" carriage "+int(self);
+					created_carriages << self;
+				}
+			}
+		}
+		ask created_carriages{
+			locomotive <- loco;
+		}
+		
+		
+		write 'end';
+		
+	}
+	
+
 
 	//reflex switch_traffic_light when: mod(cycle,timing)=200{
 	action switch_pedestrian_lights{
@@ -320,6 +469,36 @@ global {
 				}
 			}
 		}
+	}
+	
+	action clean_railroad{
+		ask rail{
+			list<point> extremities <- [first(shape.points),first(shape.points)];
+			loop p over: extremities{
+				ask rail - self{
+					if distance_to(first(self.shape.points),p) < node_tolerance{
+						self.shape <- polyline([p]+last(length(self.shape.points)-1,self.shape.points));
+					}
+					if distance_to(last(self.shape.points),p) < node_tolerance{
+						self.shape <- polyline(first(length(self.shape.points)-1,self.shape.points)+p);
+					}
+					
+				}
+			}
+		}
+	}
+	
+	
+	reflex train_scheduler{
+		loop l over: line_names{
+			put (time_to_spawn[l]-step) at: l in: time_to_spawn;
+			if time_to_spawn[l] < 0{
+				do spawn_train(l);
+				put (spawn_time[l]+rnd(10.0)#s) at: l in: time_to_spawn;
+			}
+		}
+		
+		
 	}
 	
 	reflex main_scheduler{
@@ -419,6 +598,228 @@ global {
  * 
  * ***************************************** */
 
+species rail skills: [skill_road]{
+	float maxspeed <- train_max_speed;
+	rgb color <- #black;
+	
+	aspect default {
+		draw shape color: color;
+	}
+}
+
+
+species rail_wp skills: [skill_road_node] {
+	bool is_traffic_signal <- false;
+	bool is_spawn_location <- false;
+	rail_wp final_intersection <- nil;
+	rgb color <- #white;
+	bool loco_spawn <- false;
+	float wait_time;
+
+	//take into consideration the roads coming from both direction (for traffic light)
+	list<rail> ways;
+	
+	//if the traffic light is green
+	bool is_green;
+//	string current_color <- "red";
+	
+	action initialize{
+		is_traffic_signal <- true;
+		stop << [];
+		loop rd over: roads_in {
+			ways << rail(rd);
+		}
+		do to_red;
+	}
+	
+	rail_wp compute_target{
+		if empty(roads_out){
+			return self;
+		}else{
+			return rail_wp(rail(first(roads_out)).target_node).compute_target();
+		}
+	}
+	
+	action to_green {
+		stop[0] <- [];
+		is_green <- true;
+		color <- #green;
+	}
+	
+
+	//shift the traffic light to red
+	action to_red {
+		stop[0] <- ways;
+		is_green <- false;
+		color <- #red;
+	}
+	
+	reflex turn_to_red when: is_green {
+		wait_time <- wait_time + step;
+		if wait_time > 15#s{
+			do to_green;
+			wait_time <- 0.0;
+		}
+	}
+	
+	action trigger_signal{
+		wait_time <- wait_time + step;
+		if wait_time > time_stop_in_station{
+			do to_green;
+			wait_time <- 0.0;
+		}
+	}
+	
+	aspect default{
+		draw circle(1.5) color: color;
+		
+		if length(roads_in)> 0{
+			geometry r <- first(roads_in);
+			draw polyline(points_along(polyline(last(2,r.points)),[0.6,1.0])) color: #blue;
+		}
+			if length(roads_out)> 0{
+			geometry r <- first(roads_out);
+			draw polyline(points_along(polyline(first(2,r.points)),[0.0, 0.4])) color: #white;
+		}
+	}
+}
+
+
+
+//species train skills: [moving,advanced_driving] schedules: reverse(train){
+species train skills: [advanced_driving] schedules: reverse(train){
+	point spawn_location;
+	rgb color <- rnd_color(255);
+	rail_wp target;
+	bool is_carriage <- true;
+	train locomotive;
+	float loco_speed;
+	
+	init {
+		vehicle_length <- 19.5 #m;
+		max_speed <- global_max_speed;
+	}
+	
+	//choose a random target and compute the path to it
+//	reflex choose_path when: !is_carriage and final_target = nil  {
+	//reflex choose_path when: !is_carriage and (final_target = nil) and (name !="Yamanote_1 locomotive") and (name !="Saikyo_1 locomotive")  {
+	reflex choose_path when: !is_carriage and (final_target = nil)   {
+		write "choose path "+name+" targ: "+target+" loc: "+location;
+		do compute_path graph: rail_network target: target; 
+		write "fin path";
+	}
+	
+//	reflex essai when: !is_carriage and name ="Yamanote_1 locomotive" {
+//		write "goto "+target;
+//		do goto target: target on: rail_network speed: 30#km/#h;
+//		write "end goto";
+//	}
+	
+//	reflex carriage_move when: locomotive != nil {
+//		do goto target: target on: rail_network speed: locomotive.loco_speed;
+//	}
+	
+	reflex loco_move when: locomotive = nil and final_target != nil {
+		point old_location <- location;
+		do drive;	
+		loco_speed <- norm(location - old_location)/step;
+
+//if arrived at target, die and create a new car
+		if (final_target = nil) {
+			do unregister;
+			ask train where (each.locomotive = self){
+				do unregister;
+				do die;
+			}
+			do die;
+		}
+
+		if  distance_to_current_target = 0{
+			ask rail_wp(current_target){
+				do trigger_signal;
+			}
+		}
+
+		
+		
+		
+	}
+	
+	reflex stat when: false{
+		float speed_kmh <- round(10*self.speed*3600/1000)/10;
+		float acceleration_kmh_s <- round(10*acceleration*3600 / 1000)/10;
+		write ""+self+" Speed: "+speed_kmh+"km/h. Acc: "+acceleration_kmh_s+"km/h/s.";
+		
+	}
+	
+
+	
+	aspect default {
+	//	if (current_road != nil) {
+			draw rectangle(19.5#m, 2.95#m ) depth: 2#m color: is_carriage?#grey:yamanote_green rotate: heading at: location;	
+		//	}	
+	}
+//			switch type{
+//				match "car"{
+//					
+//					draw (circle(0.3#m)rotated_by(90::{1,0,0})) rotate: heading  color: #black depth: 0.3#m at: location + {0,0,0.3} + ({1#m,0.6,0} rotated_by (heading::{0,0,1}));
+//					draw (circle(0.3#m)rotated_by(90::{1,0,0})) rotate: heading  color: #black depth: 0.3#m at: location +  {0,0,0.3} + ({-1#m,0.6,0} rotated_by (heading::{0,0,1}));
+//					draw (circle(0.3#m)rotated_by(-90::{1,0,0})) rotate: heading  color: #black depth: 0.3#m at: location +  {0,0,0.3} + ({1#m,-0.6,0} rotated_by (heading::{0,0,1}));
+//					draw (circle(0.3#m)rotated_by(-90::{1,0,0})) rotate: heading  color: #black depth: 0.3#m at: location +  {0,0,0.3} + ({-1#m,-0.6,0} rotated_by (heading::{0,0,1}));
+//					draw (triangle(0.5#m,0.5#m)rotated_by(-90::{1,0,0})) rotate: heading  color: #black depth: 1.6#m at: location +  {0,0,1} + ({-1#m,0.8,0} rotated_by (heading::{0,0,1}));
+//					draw (triangle(1#m,0.5#m)rotated_by(-90::{1,0,0})) rotate: heading  color: #black depth: 1.6#m at: location +  {0,0,1} + ({0.6#m,0.8,0} rotated_by (heading::{0,0,1}));
+//					draw (square(0.05#m)rotated_by(26::{0,1,0})) rotate: heading  color: color depth: 0.52#m at: location +  {0,0,0.87} + ({-1.22#m,0.8,0} rotated_by (heading::{0,0,1}));
+//		 			draw (square(0.05#m)rotated_by(26::{0,1,0})) rotate: heading  color: color depth: 0.52#m at: location +  {0,0,0.87} + ({-1.22#m,-0.8,0} rotated_by (heading::{0,0,1}));
+//		 			draw (square(0.05#m)rotated_by(-45::{0,1,0})) rotate: heading  color: color depth: 0.65#m at: location +  {0,0,0.87} + ({1.08#m,0.8,0} rotated_by (heading::{0,0,1}));
+//		 			draw (square(0.05#m)rotated_by(-45::{0,1,0})) rotate: heading  color: color depth: 0.65#m at: location +  {0,0,0.87} + ({1.08#m,-0.8,0} rotated_by (heading::{0,0,1}));
+//		 			draw rectangle(1.65#m, 1.65#m ) depth: 0.05#m color: color rotate: heading at: location+{0,0,1.3#m}+ ({-0.19#m,0,0} rotated_by (heading::{0,0,1}));	
+//		 			draw rectangle(1.65#m, 1.6#m ) depth: 0.4#m color: #black rotate: heading at: location+{0,0,0.9#m}+ ({-0.19#m,0,0} rotated_by (heading::{0,0,1}));	
+//					draw (square(0.05#m)rotated_by(3::{1,0,0})) rotate: heading  color: color depth: 0.47#m at: location +  {0,0,0.87} + ({-0.4#m,0.825,0} rotated_by (heading::{0,0,1}));
+//		 			draw (square(0.05#m)rotated_by(-3::{1,0,0})) rotate: heading  color: color depth: 0.47#m at: location +  {0,0,0.87} + ({-0.4#m,-0.825,0} rotated_by (heading::{0,0,1}));			
+//				}
+//				match "truck"{
+//					draw rectangle(7.8#m, 1.9#m ) depth: 0.2#m color: color rotate: heading at: location+{0,0,0.3#m};	
+//					draw (circle(0.4#m)rotated_by(90::{1,0,0})) rotate: heading  color: #black depth: 0.3#m at: location + {0,0,0.4} + ({3#m,0.7,0} rotated_by (heading::{0,0,1}));
+//					draw (circle(0.4#m)rotated_by(90::{1,0,0})) rotate: heading  color: #black depth: 0.28#m at: location +  {0,0,0.4} + ({-2#m,0.7,0} rotated_by (heading::{0,0,1}));
+//					draw (circle(0.4#m)rotated_by(-90::{1,0,0})) rotate: heading  color: #black depth: 0.3#m at: location +  {0,0,0.4} + ({3#m,-0.7,0} rotated_by (heading::{0,0,1}));
+//					draw (circle(0.4#m)rotated_by(-90::{1,0,0})) rotate: heading  color: #black depth: 0.28#m at: location +  {0,0,0.4} + ({-2#m,-0.7,0} rotated_by (heading::{0,0,1}));
+////					draw (triangle(0.5#m,0.5#m)rotated_by(-90::{1,0,0})) rotate: heading  color: #black depth: 1.6#m at: location +  {0,0,1} + ({-1#m,0.8,0} rotated_by (heading::{0,0,1}));
+//					draw rectangle(1.7#m, 1.9#m ) depth: 0.9#m color: color rotate: heading at: location+({3.05,0,0.3#m} rotated_by (heading::{0,0,1}));	
+//
+//					draw (triangle(0.6#m,0.66#m)rotated_by(-90::{1,0,0})) rotate: heading  color: #black depth: 1.8#m at: location +  {0,0,1.4} + ({3.57#m,0.9,0} rotated_by (heading::{0,0,1}));
+//		 			draw (square(0.05#m)rotated_by(-24::{0,1,0})) rotate: heading  color: color depth: 0.72#m at: location +  {0,0,1.18} + ({3.87#m,0.9,0} rotated_by (heading::{0,0,1}));
+//		 			draw (square(0.05#m)rotated_by(-24::{0,1,0})) rotate: heading  color: color depth: 0.72#m at: location +  {0,0,1.18} + ({3.87#m,-0.9,0} rotated_by (heading::{0,0,1}));
+//		 			draw rectangle(1.4#m, 1.85#m ) depth: 0.05#m color: color rotate: heading at: location+{0,0,1.8#m}+ ({2.9#m,0,0} rotated_by (heading::{0,0,1}));	
+//	 				draw rectangle(1#m, 1.8#m ) depth: 0.6#m color: #black rotate: heading at: location+{0,0,1.2}+ ({2.9#m,0,0} rotated_by (heading::{0,0,1}));	
+//	 				draw rectangle(0.5#m, 1.85#m ) depth: 0.6#m color: color rotate: heading at: location+{0,0,1.2}+ ({2.45#m,0,0} rotated_by (heading::{0,0,1}));	
+//	 				draw rectangle(6#m, 2#m ) depth: 2.2#m color: color2 rotate: heading at: location+{0,0,0.2}+ ({-0.95#m,0,0} rotated_by (heading::{0,0,1}));	
+//				}
+//			}
+//  		}
+//	}
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 species road skills: [skill_road]{
 	int group;
@@ -429,6 +830,9 @@ species road skills: [skill_road]{
 		draw shape color: #red;
 	}
 }
+
+
+
 
 
 species intersection skills: [skill_road_node] {
@@ -833,32 +1237,6 @@ species people skills: [pedestrian] control: fsm{
 	}
 }
 
-species debug{
-	aspect default{
-			loop e over: voronoi_diagram  {
-				draw e color: #blue border: #black;
-				draw circle(0.1) color: #red at: e.location;
-			}
-	}
-	
-	aspect traffic_light{
-		draw union(crosswalk collect(each.shape)) color: can_cross?#green:#red;	
-		ask intersection where each.is_traffic_signal{
-			draw circle(3) at: location color: is_green?#green:#red;
-		}
-	}
-	
-	aspect grid{
-		draw open_area color: #pink;
-		loop p over: nodes{
-			draw circle(0.5) at: p color: #yellow;
-		}
-		loop p over: nodes_inside{
-			draw circle(0.2) at: p.location color: #red;
-		}
-	}
-}
-
 species traffic_signal{
 	int group;
 	int crosswalk_left;
@@ -975,21 +1353,70 @@ species tree{
 }
 
 
-experiment ShibuyaCrossing type: gui  {
+species debug{
+	aspect default{
+//			loop e over: voronoi_diagram  {
+//				draw e color: #blue border: #black;
+//				draw circle(0.1) color: #red at: e.location;
+//			}
+		
+		float sc <- 135.0;
+		draw photo at: {world.shape.width/2-15,world.shape.height/2-3.7} size: {3035/1609*sc,sc};
+//		draw circle(10) at: {0,0} color: #yellow;
+	}
+	
+	aspect traffic_light{
+		draw union(crosswalk collect(each.shape)) color: can_cross?#green:#red;	
+		ask intersection where each.is_traffic_signal{
+			draw circle(3) at: location color: is_green?#green:#red;
+		}
+	}
+	
+	aspect grid{
+		draw open_area color: #pink;
+		loop p over: nodes{
+			draw circle(0.5) at: p color: #yellow;
+		}
+		loop p over: nodes_inside{
+			draw circle(0.2) at: p.location color: #red;
+		}
+	}
+}
+
+
+
+
+
+
+
+
+
+
+experiment "Shibuya Crossing" type: gui  {
 	float minimum_cycle_duration <- 0.001#s;
 	output {
 		display map type: 3d axes: false background: #darkgray{
 			camera 'default' location: {98.4788,143.3489,64.7132} target: {98.6933,81.909,0.0};
-			species fake_building transparency: 0.9;			
-			image photo refresh: false transparency: 0 ;	
+					species debug;
+			species rail;
+			species train;
+	//		species fake_building transparency: 0.9;			
+		//	image im refresh: false transparency: 0 position: {-100,0,0} size: {3035,1609};	
+			//image photo refresh: false transparency: 0 ;	
+			
 			species traffic_signal;
 			species pedestrian_path aspect: default;
 			species people aspect: 3d;
 	
+		//	species walking_area transparency: 0.8;
 		//	species people aspect: debug;
 			species car transparency: 0.6;
+
+			species rail_wp;
+
 			species building transparency: 0.4;
 			species tree transparency: 0.7;
+
 		}
 	}
 }
@@ -1001,6 +1428,7 @@ experiment "First person view" type: gui  {
 		display map type: 3d axes: false background: #darkgray{
 			camera #default dynamic: true location: {int(first(people).location.x), int(first(people).location.y), 1#m} target:
 			{cos(first(people).heading) * first(people).speed + int(first(people).location.x), sin(first(people).heading) * first(people).speed + int(first(people).location.y), 1#m};
+			species train;
 			species fake_building transparency: 0.9;			
 			image photo refresh: false transparency: 0 ;	
 			species traffic_signal;
@@ -1018,6 +1446,7 @@ experiment "Car view" type: gui  {
 		display map type: 3d axes: false background: #darkgray{
 			camera #default dynamic: true location: {int(first(car).location.x), int(first(car).location.y), 0.8#m} target:
 			{cos(first(car).heading) + int(first(car).location.x), sin(first(car).heading)  + int(first(car).location.y), 0.8#m};
+			species train;
 			species fake_building transparency: 0.9;			
 			image photo refresh: false transparency: 0 ;	
 			species traffic_signal;
