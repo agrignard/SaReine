@@ -715,9 +715,9 @@ species train skills: [advanced_driving] schedules: reverse(train){
 //		write "end goto";
 //	}
 	
-//	reflex carriage_move when: locomotive != nil {
-//		do goto target: target on: rail_network speed: locomotive.loco_speed;
-//	}
+	reflex carriage_move when: locomotive != nil {
+		do goto target: target on: rail_network speed: locomotive.loco_speed;
+	}
 	
 	reflex loco_move when: locomotive = nil and final_target != nil {
 		point old_location <- location;
