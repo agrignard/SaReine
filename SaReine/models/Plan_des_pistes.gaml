@@ -28,7 +28,7 @@ global {
 	float roads_z_shift <- 1.0;
 	
 	//données SIG
-	string grid_data_file <- "../includes/Alpes100.asc";
+	string grid_data_file <- "../includes/Alpes50.asc";
 	file grid_data <- grid_file(grid_data_file);
 	geometry shape <- envelope(grid_data);	
 	file shape_file_slopes <- shape_file("../includes/shp/ski_slopes.shp");
@@ -609,7 +609,18 @@ grid parcelle file: grid_data neighbors: 8  frequency:0{
 
 	aspect basic {
         //juste pour vérifier (faut ajouter l'agent parcelle dans le display si on veut le voir)
-        draw rectangle(1#m,1#m) color:ma_couleur depth:altitude border:#black ; 
+//        draw rectangle(1#m,1#m) color:ma_couleur depth:altitude border:#black lighted: true; 
+		float shapeWidth <- 250#m;
+//		float ul 
+        draw rectangle(250#m,250#m) at: location + {0,0,altitude} color:#white border:#black ; 
+//       draw cube(50#m) at: location + {0,0,altitude} color:#white border:#black lighted: true; 
+	}
+}
+
+species dummy{
+	
+	aspect default{
+		
 	}
 }
 
@@ -636,9 +647,14 @@ experiment demo type: gui {
 	parameter 'Trail smoothness' var: trail_smoothness min:0.01 max:1.0  category: "Preferences";
 	output synchronized: true{
 
-		display "carte" type: opengl toolbar:false background:#black{
+		display "carte" type: opengl toolbar:false background: rgb(36,150,234) {
 
-			grid parcelle   elevation:grid_value  	grayscale:true triangulation: true refresh: false;
+//			grid parcelle elevation:grid_value grayscale:true triangulation: true refresh: false;
+			grid parcelle elevation:grid_value triangulation: true refresh: false texture: file("../includes/Alpes-winter-resX2.png");
+//			grid parcelle elevation:grid_value grayscale:false triangulation: true refresh: false;
+//			grid parcelle elevation:grid_value+(1#m) refresh: false triangulation: true wireframe:true transparency: 0.7;
+//			species parcelle  refresh: false aspect: basic;
+//			light #default intensity: 20; 
 			species slopes aspect:base position:{0,0,0.0};
 			species aerial_ways aspect:base position:{0,0,0.0};
 			species people aspect:base;
@@ -665,7 +681,7 @@ experiment "First person view" type: gui {
 	parameter 'Camera lens' var: camera_lens  min:0.0 max: 120.0 step: 1.0 category: "First view";
 
 	output synchronized: true{
-		display "carte" type: opengl {
+		display "carte" type: opengl background: rgb(36,150,234) {
 //			camera #default dynamic: true location: {int(first(people).shifted_location.x), int(first(people).shifted_location.y), int(first(people).location.z+50)} target:
 //			{cos(first(people).camera_heading) * first(people).speed + int(first(people).shifted_location.x), sin(first(people).camera_heading) * first(people).speed + int(first(people).shifted_location.y), int(first(people).location.z+50)};
 			camera #default dynamic: true
@@ -676,7 +692,9 @@ experiment "First person view" type: gui {
 			lens: camera_lens;
 		//	location: the_skier.shifted_location+{0,0,50}+{-cos(the_skier.camera_heading), -sin(the_skier.camera_heading), tan(min(89.9,camera_angle))}*camera_distance;
 			
-			grid parcelle   elevation:grid_value  	grayscale:true triangulation: true refresh: false;
+			grid parcelle elevation:grid_value triangulation: true refresh: false texture: file("../includes/Alpes-winter-resX2.png");
+			
+//			grid parcelle   elevation:grid_value  	grayscale:true triangulation: true refresh: false;
 			species slopes aspect:base position:{0,0,0.0};
 			species aerial_ways aspect:base position:{0,0,0.0};
 			species people aspect:base;

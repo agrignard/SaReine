@@ -17,10 +17,10 @@ global {
 	float NORMAL_THICKNESS <- 0.5;
 	float MEDIUM_THICKNESS <- 1.5;
 	float HIGH_THICKNESS <- 2.5;
-	float tolerance <- 0.0001 parameter: true on_change: refresh_tolerance;
-	bool override_null_values_roads <- false parameter: true on_change: refresh_merge;
+	float tolerance <- 0.0001 on_change: refresh_tolerance;
+	bool override_null_values_roads <- false  on_change: refresh_merge;
 //	bool override_null_values_intersections <- true parameter: true on_change: refresh_intersections;
-	list road_parameters_to_match <- roads_shapefile.attributes - ['the_geom','id','test_id'] parameter: true on_change: refresh_merge;
+	list road_parameters_to_match <- roads_shapefile.attributes - ['the_geom','id','test_id'] on_change: refresh_merge;
 	//list intersection_parameters_to_match <- intersections_shapefile.attributes - ['the_geom','id','test_id'] parameter: true;
 
 	list<list<road>> to_merge <- [];
@@ -515,6 +515,7 @@ experiment clean type: gui {
 	text "If roads have different values for the parameters that are listed bellow, they will not be merged (click on the 'edit' button for a friendlier interface)." category: "Merge roads";
 	parameter road_params name:" " var: road_parameters_to_match category: "Merge roads";
 	parameter "Override NULL values for road merge" var: override_null_values_roads category: "Null values";
+		
 	
 	output {
 		layout #split;//#vertical;	
