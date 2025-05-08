@@ -57,6 +57,9 @@ global {
 	people the_skier;
 	string the_skier_level <- levels[0] among: levels;
 	
+	people the_skier;
+	string the_skier_level <- levels[0] among: levels;
+	
 	
 >>>>>>> Stashed changes
 	map<string, map<string,float>> init_proba_wander <- [
