@@ -42,15 +42,23 @@ global {
 	
 	point dims <- {4.5#m,12.0#m};
 	rgb trail_color <- rgb(150,150,150);
-	people the_skier;
+	
 	
 	graph ski_domain;
 	
 	debug debugger;
 	
 	list<string> levels <- ["1*","2*","3*","chamois"];
+<<<<<<< Updated upstream
 
 		
+=======
+	
+	people the_skier;
+	string the_skier_level <- levels[0] among: levels;
+	
+	
+>>>>>>> Stashed changes
 	map<string, map<string,float>> init_proba_wander <- [
 		"1*"::["verte"::100.0,"bleue"::40.0,"rouge"::20.0,"noire"::5.0,
 					"freeride"::1.0,"link"::100.0,"acces"::100.0,"liaison"::100.0],
@@ -143,7 +151,7 @@ global {
 			//	color <- #green;
 			}
 			if type="Industrial" {
-				color <- #blue ;
+//				color <- #blue ;
 			}	
 //			loop i from: 0 to:length(shape.points)-1{	
 //				val <- parcelle(shape.points[i]).grid_value;
@@ -258,6 +266,7 @@ global {
 		}
 		
 		the_skier <- one_of(people);
+		the_skier_level <- the_skier.level;
 		
 		slopes_graph <-directed(as_edge_graph(slopes));
 		aerial_graph <- directed(as_edge_graph(aerial_ways));
@@ -286,6 +295,7 @@ global {
 		if change_skier{
 			change_skier <- false;
 			the_skier <- one_of(people);
+			the_skier_level <- the_skier.level;
 		}
 	}
 	
@@ -489,6 +499,10 @@ species people skills:[moving] parallel: true{
 	string state <- "ski";
 	
 	init{
+//		do set_color;
+	}
+	
+	action set_color{
 		switch level{
 			match "1*" {color <- #green;}
 			match "2*" {color <- #blue;}//slidding <- 80;}
@@ -554,6 +568,7 @@ species people skills:[moving] parallel: true{
 	
 	
 	aspect base{
+		do set_color;
 		if current_edge != nil and species(current_edge) = slopes{
 		//	shape <- (rectangle(dims.x,dims.y) rotated_by (heading+90+angle_amp*cos(90+angle+slidding)));
 			shape <- (rectangle(dims.x,dims.y) rotated_by (camera_heading+90));
@@ -648,6 +663,7 @@ experiment "First person view" type: gui {
 	parameter 'Trail size' var: nb_last_positions min:0 max:200  category: "Preferences";
 	parameter 'Trail smoothness' var: trail_smoothness min:0.01 max:1.0  category: "Preferences";
 	parameter 'Change first view skier' var: change_skier   category: "First view";	
+	parameter 'Change skier level' var: the_skier_level <- "1*" among: levels category: "First view" on_change: {the_skier.level <- the_skier_level;};
 	parameter 'Camera distance' var: camera_distance  min:0.0 max: 1000.0 step: 10.0 category: "First view";
 	parameter 'Camera angle' var: camera_angle  min:0.0 max: 90.0 step: 1.0 category: "First view";
 	parameter 'Camera lens' var: camera_lens  min:0.0 max: 120.0 step: 1.0 category: "First view";
