@@ -28,7 +28,7 @@ global {
 	float roads_z_shift <- 1.0;
 	
 	//données SIG
-	string grid_data_file <- "../includes/Alpes250.asc";
+	string grid_data_file <- "../includes/Alpes100.asc";
 	file grid_data <- grid_file(grid_data_file);
 	geometry shape <- envelope(grid_data);	
 	file shape_file_slopes <- shape_file("../includes/shp/ski_slopes.shp");
@@ -49,8 +49,8 @@ global {
 	debug debugger;
 	
 	list<string> levels <- ["1*","2*","3*","chamois"];
-	
-	
+
+		
 	map<string, map<string,float>> init_proba_wander <- [
 		"1*"::["verte"::100.0,"bleue"::40.0,"rouge"::20.0,"noire"::5.0,
 					"freeride"::1.0,"link"::100.0,"acces"::100.0,"liaison"::100.0],
@@ -177,7 +177,7 @@ global {
 		string sens_attribute; 
 		write "MNT: "+grid_data_file+" loaded.";		
 		
-		if ("sens "+resolution) in first(shape_file_slopes).attributes.keys{
+		if ("sens "+resolution) in first(shape_file(shape_file_slopes)).attributes.keys{
 			write "Loading attributes at resolution "+resolution;
 			sens_attribute <- "sens "+resolution;
 		}else{
