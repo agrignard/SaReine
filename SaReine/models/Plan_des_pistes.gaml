@@ -49,19 +49,12 @@ global {
 	debug debugger;
 	
 	list<string> levels <- ["1*","2*","3*","chamois"];
-<<<<<<< Updated upstream
 
-		
-=======
 	
 	people the_skier;
 	string the_skier_level <- levels[0] among: levels;
 	
-	people the_skier;
-	string the_skier_level <- levels[0] among: levels;
-	
-	
->>>>>>> Stashed changes
+
 	map<string, map<string,float>> init_proba_wander <- [
 		"1*"::["verte"::100.0,"bleue"::40.0,"rouge"::20.0,"noire"::5.0,
 					"freeride"::1.0,"link"::100.0,"acces"::100.0,"liaison"::100.0],
